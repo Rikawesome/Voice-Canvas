@@ -2,6 +2,10 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from routers import chat # This is the crucial link to your logic
 
 app = FastAPI(title="VoiceCanvas")
@@ -27,9 +31,9 @@ async def root():
 # Add this to main.py (after app = FastAPI(...))
 @app.get("/test")
 async def test():
-    from services.llm import gist
+    from services.llm import generate_response
     try:
-        result = gist([{"role": "user", "content": "Say 'Omo testing dey work' in Pidgin"}])
+        result = await generate_response("Say 'Omo testing dey work' in Pidgin")
         return {"status": "ok", "result": result}
     except Exception as e:
         return {"status": "error", "error": str(e)}

@@ -235,10 +235,10 @@ function openCastingOffice(characters) {
     charList.innerHTML = '';
 
     const voices = [
-        "en-US-AndrewNeural",
-        "en-GB-RyanNeural",
-        "en-NG-EzinneNeural",
-        "en-US-AvaNeural"
+        { value: "narrator", label: "Narrator" },
+        { value: "lead_male", label: "Lead Male" },
+        { value: "lead_female", label: "Lead Female" },
+        { value: "villain", label: "Villain" }
     ];
 
     const chars = characters || {};
@@ -254,7 +254,7 @@ function openCastingOffice(characters) {
             </div>
 
             <select class="voice-select" data-char="${name}">
-                ${voices.map(v => `<option value="${v}">${v}</option>`).join('')}
+                ${voices.map(v => `<option value="${v.value}">${v.label}</option>`).join('')}
             </select>
         `;
 
@@ -293,11 +293,17 @@ async function handleProduction() {
             })
         });
 
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => null);
+            const message = errorData?.details || errorData?.error || "Production failed";
+            throw new Error(message);
+        }
+
         const blob = await res.blob();
         playAudio(URL.createObjectURL(blob));
 
     } catch (e) {
-        appendMessage("assistant", "Production failed 😭");
+        appendMessage("assistant", `Production failed: ${e.message}`);
     }
 }
 
