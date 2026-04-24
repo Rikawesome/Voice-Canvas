@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>VoiceCanvas | Anime Empire</title>
+
+    <style>
+        :root {
+            --bg-dark: #0b141a;
+            --bg-panel: #202c33;
+            --accent: #00a884;
+            --text-primary: #e9edef;
+            --user-bubble: #005c4b;
+            --assistant-bubble: #233138;
+            --live-red: #ea4335;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            font-family: system-ui, sans-serif;
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        header {
+            background: var(--bg-panel);
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #374045;
+        }
+
+        .logo {
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        #mode-indicator {
+            background: #ffd700;
+            color: #000;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: bold;
+        }
+
+        #messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            transition: opacity 0.3s ease;
+        }
+
+        /* ===================== */
+        /* CASTING MODAL */
+        /* ===================== */
+
+        #casting-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.9);
+            backdrop-filter: blur(8px);
+            z-index: 100;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .modal-card {
+            background: var(--bg-panel);
+            width: 100%;
+            max-width: 420px;
+            border-radius: 20px;
+            padding: 20px;
+            border: 1px solid #374045;
+        }
+
+        .char-card {
+            background: #2a3942;
+            padding: 12px;
+            border-radius: 14px;
+            margin-bottom: 10px;
+            border: 1px solid #374045;
+        }
+
+        .char-name {
+            color: var(--accent);
+            font-weight: bold;
+        }
+
+        .char-vibe {
+            font-size: 12px;
+            color: #8696a0;
+        }
+
+        .voice-select {
+            width: 100%;
+            margin-top: 8px;
+            padding: 10px;
+            border-radius: 10px;
+            background: var(--bg-dark);
+            color: white;
+            border: 1px solid #444;
+        }
+
+        /* ===================== */
+        /* INPUT AREA */
+        /* ===================== */
+
+        .input-area {
+            background: var(--bg-panel);
+            padding: 10px 12px 25px;
+        }
+
+        .input-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        #user-input {
+            flex: 1;
+            padding: 12px 14px;
+            border-radius: 22px;
+            border: 1px solid #374045;
+            background: #2a3942;
+            color: white;
+            outline: none;
+            font-size: 16px;
+        }
+
+        .action-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            background: var(--accent);
+            color: white;
+        }
+
+        #mic-btn.active-live {
+            background: var(--live-red);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        /* ===================== */
+        /* MESSAGES */
+        /* ===================== */
+
+        .message {
+            max-width: 80%;
+            padding: 10px 14px;
+            border-radius: 16px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+        }
+
+        .user {
+            align-self: flex-end;
+            background: var(--user-bubble);
+            border-bottom-right-radius: 4px;
+        }
+
+        .assistant {
+            align-self: flex-start;
+            background: var(--assistant-bubble);
+            border: 1px solid #374045;
+            border-bottom-left-radius: 4px;
+        }
+
+        /* ===================== */
+        /* SMALL UX FIXES */
+        /* ===================== */
+
+        button {
+            user-select: none;
+        }
+
+    </style>
+</head>
+
+<body>
+
+    <!-- HEADER -->
+    <header>
+        <span class="logo">VoiceCanvas</span>
+
+        <div style="display:flex; gap:10px; align-items:center;">
+            <span id="mode-indicator">GIST</span>
+
+            <button id="new-session-btn"
+                style="background:none; border:none; color:#8696a0; font-size:12px; cursor:pointer;">
+                Reset
+            </button>
+        </div>
+    </header>
+
+    <!-- CASTING MODAL -->
+    <div id="casting-modal">
+        <div class="modal-card">
+
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h3 style="color:var(--accent);">Casting Office 🎬</h3>
+
+                <button onclick="document.getElementById('casting-modal').style.display='none';
+                                 document.getElementById('messages').style.opacity='1';"
+                        style="background:none; border:none; color:#aaa; font-size:24px;">
+                    ×
+                </button>
+            </div>
+
+            <p style="font-size:12px; color:#aaa; margin-top:6px;">
+                Assign voices to characters
+            </p>
+
+            <div id="character-list" style="margin-top:12px;"></div>
+
+            <button id="start-production-btn"
+                style="width:100%; margin-top:10px; padding:14px;
+                       border:none; background:var(--accent);
+                       color:white; border-radius:12px; font-weight:bold;">
+                START PRODUCTION 🎙️
+            </button>
+
+        </div>
+    </div>
+
+    <!-- CHAT -->
+    <div id="messages"></div>
+
+    <!-- INPUT -->
+    <div class="input-area">
+        <div class="input-row">
+
+            <button id="toggle-tts-btn">🔊</button>
+
+            <input id="user-input" placeholder="Wetin dey sup?..." />
+
+            <button id="mic-btn" class="action-btn">🎙️</button>
+
+            <button id="send-btn" class="action-btn" style="display:none;">➤</button>
+
+        </div>
+    </div>
+
+    <!-- SCRIPT -->
+    <script src="/static/app.js"></script>
+
+</body>
+</html>
