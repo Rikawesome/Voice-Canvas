@@ -40,7 +40,7 @@ RULES:
 
 FORMAT:
 [
-  {"speaker": "Name", "text": "..."}
+  {{"speaker": "Name", "text": "..."}}
 ]
 """
 
