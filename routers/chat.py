@@ -51,6 +51,7 @@ class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
     voice_override: Optional[str] = None
+    mode: Optional[str] = None
 
 
 class ProductionRequest(BaseModel):
@@ -90,7 +91,15 @@ def extract_scene_json(script: str) -> List[Dict[str, str]]:
         if match:
             cleaned = match.group(1).strip()
 
-    parsed = json.loads(cleaned)
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError:
+        repaired = re.sub(r",\s*([}\]])", r"\1", cleaned)
+        try:
+            parsed = json.loads(repaired)
+        except json.JSONDecodeError:
+            parsed = salvage_scene_json(repaired)
+
     if not isinstance(parsed, list):
         raise ValueError("Scene script must be a JSON array")
 
@@ -112,17 +121,175 @@ def extract_scene_json(script: str) -> List[Dict[str, str]]:
     return normalized
 
 
+def salvage_scene_json(script: str) -> List[Dict[str, str]]:
+    speaker_pattern = re.compile(r'"speaker"\s*:\s*"([^"]+)"', re.IGNORECASE)
+    speakers = list(speaker_pattern.finditer(script))
+    salvaged: List[Dict[str, str]] = []
+
+    for index, match in enumerate(speakers):
+        speaker = match.group(1).strip() or "Narrator"
+        block_start = match.start()
+        block_end = speakers[index + 1].start() if index + 1 < len(speakers) else len(script)
+        block = script[block_start:block_end]
+
+        text_match = re.search(r'"text"\s*:\s*"', block, re.IGNORECASE)
+        if not text_match:
+            continue
+
+        text_start = text_match.end()
+        text = _read_json_string_value(block, text_start)
+        text = re.sub(r"\s+", " ", text).strip()
+        if not text:
+            continue
+
+        salvaged.append({"speaker": speaker, "text": text})
+
+    if salvaged:
+        return salvaged
+
+    raise ValueError("Scene script is invalid JSON and could not be repaired")
+
+
+def _read_json_string_value(source: str, start_index: int) -> str:
+    chars = []
+    escaped = False
+    i = start_index
+
+    while i < len(source):
+        char = source[i]
+
+        if escaped:
+            chars.append(char)
+            escaped = False
+            i += 1
+            continue
+
+        if char == "\\":
+            escaped = True
+            i += 1
+            continue
+
+        if char == '"':
+            remainder = source[i + 1:].lstrip()
+            if remainder.startswith(",") or remainder.startswith("}") or remainder.startswith("]"):
+                break
+
+            chars.append(char)
+            i += 1
+            continue
+
+        chars.append(char)
+        i += 1
+
+    return "".join(chars)
+
+
+def build_scene_character_map(session: Session, script: str) -> Dict[str, Dict[str, str]]:
+    characters: Dict[str, Dict[str, str]] = {}
+
+    for name, data in (getattr(session, "characters", {}) or {}).items():
+        characters[name] = {
+            "vibe": data.get("vibe", "Character"),
+            "voice_mapping": data.get("voice_mapping"),
+        }
+
+    for name, data in (getattr(session, "temp_characters", {}) or {}).items():
+        existing = characters.get(name, {})
+        characters[name] = {
+            "vibe": existing.get("vibe") or data.get("vibe", "Scene character"),
+            "voice_mapping": existing.get("voice_mapping"),
+        }
+
+    try:
+        for line in extract_scene_json(script):
+            speaker = line.get("speaker", "Narrator").strip()
+            if not speaker:
+                continue
+
+            existing = characters.get(speaker, {})
+            characters[speaker] = {
+                "vibe": existing.get("vibe") or "Generated for this scene",
+                "voice_mapping": existing.get("voice_mapping"),
+            }
+    except Exception:
+        pass
+
+    return characters
+
+
 def resolve_production_voice_id(raw_voice: Optional[str]) -> Optional[str]:
     selected = (raw_voice or "").strip()
     if not selected:
-        return os.getenv("ELEVENLABS_DEFAULT_VOICE_ID")
+        return resolve_any_production_voice_id()
 
     selected = LEGACY_CAST_FALLBACKS.get(selected, selected)
     env_name = PRODUCTION_VOICE_ENV_MAP.get(selected.lower())
     if env_name:
-        return os.getenv(env_name) or os.getenv("ELEVENLABS_DEFAULT_VOICE_ID")
+        return os.getenv(env_name) or resolve_any_production_voice_id()
 
     return selected
+
+
+def resolve_any_production_voice_id() -> Optional[str]:
+    default_voice = os.getenv("ELEVENLABS_DEFAULT_VOICE_ID")
+    if default_voice:
+        return default_voice
+
+    for env_name in PRODUCTION_VOICE_ENV_MAP.values():
+        configured_voice = os.getenv(env_name)
+        if configured_voice:
+            return configured_voice
+
+    return None
+
+
+def choose_edge_voice_for_speaker(speaker: str) -> str:
+    lowered = (speaker or "").strip().lower()
+
+    if lowered in {"narrator", "anna", "mikasa", "historia", "sasha"}:
+        return "en-US-AvaNeural"
+    if lowered in {"villain", "levi", "eren", "reiner", "zeke"}:
+        return "en-GB-RyanNeural"
+
+    return "en-US-AndrewNeural"
+
+
+async def synthesize_scene_line(text: str, speaker: str, requested_voice: Optional[str]) -> bytes:
+    voice_id = resolve_production_voice_id(requested_voice)
+    if voice_id:
+        try:
+            return await elevenlabs_text_to_speech(text, voice_id)
+        except httpx.HTTPStatusError as exc:
+            error_body = exc.response.text.strip()
+            should_retry_with_default = (
+                exc.response.status_code == 404 and
+                '"code":"voice_not_found"' in error_body.replace(" ", "")
+            )
+
+            if should_retry_with_default:
+                fallback_voice_id = resolve_any_production_voice_id()
+                if fallback_voice_id and fallback_voice_id != voice_id:
+                    print(
+                        f"Production fallback: ElevenLabs voice '{voice_id}' was not found for "
+                        f"speaker '{speaker}'. Retrying with default ElevenLabs voice."
+                    )
+                    return await elevenlabs_text_to_speech(text, fallback_voice_id)
+
+            raise
+
+    fallback_voice = choose_edge_voice_for_speaker(speaker)
+    print(
+        f"Production fallback: using Edge TTS voice '{fallback_voice}' for speaker '{speaker}' "
+        "because no ElevenLabs voice was configured."
+    )
+    audio_bytes = await text_to_speech(text, fallback_voice)
+    if not audio_bytes:
+        raise ValueError(
+            f"Unable to synthesize audio for '{speaker}'. "
+            "Configure ELEVENLABS_DEFAULT_VOICE_ID or provide a cast mapping."
+        )
+
+    return audio_bytes
 
 
 async def elevenlabs_text_to_speech(text: str, voice_id: str) -> bytes:
@@ -152,11 +319,26 @@ async def elevenlabs_text_to_speech(text: str, voice_id: str) -> bytes:
     }
 
     async with httpx.AsyncClient(timeout=45.0) as client:
-        response = await client.post(
-            f"{ELEVENLABS_BASE_URL}/{voice_id}",
-            headers=headers,
-            json=payload,
-        )
+        for attempt in range(3):
+            response = await client.post(
+                f"{ELEVENLABS_BASE_URL}/{voice_id}",
+                headers=headers,
+                json=payload,
+            )
+
+            if response.status_code != 409:
+                break
+
+            try:
+                error_payload = response.json()
+            except ValueError:
+                error_payload = {}
+
+            detail = error_payload.get("detail", {})
+            if detail.get("code") != "already_running" or attempt == 2:
+                break
+
+            await asyncio.sleep(1.0 + attempt * 0.5)
 
     response.raise_for_status()
     return response.content
@@ -171,20 +353,36 @@ async def chat(request: ChatRequest):
     session = Session.load(request.session_id)
     session.add_message("user", request.message)
 
-    result = await generate_response(request.message, session)
+    try:
+        result = await generate_response(request.message, session, requested_mode=request.mode)
 
-    reply = result["data"]
-    is_scene = result["type"] == "scene"
+        reply = result["data"]
+        is_scene = result["type"] == "scene"
+        scene_characters = build_scene_character_map(session, reply) if is_scene else session.characters
 
-    session.add_message("assistant", reply)
-    session.save()
+        session.add_message("assistant", reply)
+        session.save()
 
-    return {
-        "reply": reply,
-        "session_id": session.session_id,
-        "trigger_cast": is_scene,
-        "characters": session.characters
-    }
+        return {
+            "reply": reply,
+            "session_id": session.session_id,
+            "mode": session.mode,
+            "trigger_cast": is_scene,
+            "characters": scene_characters
+        }
+    except Exception as e:
+        print(f"Chat Error: {e}")
+        session.save()
+        return JSONResponse(
+            {
+                "error": str(e),
+                "session_id": session.session_id,
+                "mode": session.mode,
+                "trigger_cast": False,
+                "characters": session.characters,
+            },
+            status_code=502,
+        )
 
 
 # =========================
@@ -194,7 +392,7 @@ async def chat(request: ChatRequest):
 @router.post("/stream-audio")
 async def stream_audio(request: ChatRequest):
     session = Session.load(request.session_id)
-    result = await generate_response(request.message, session)
+    result = await generate_response(request.message, session, requested_mode=request.mode)
     
     reply_text = result["data"]
     voice = request.voice_override or "en-US-AndrewNeural"
@@ -233,27 +431,25 @@ async def speak(request: ChatRequest):
 async def produce_scene(request: ProductionRequest):
     try:
         script_data = extract_scene_json(request.script)
-        tasks = []
+        session = Session.load(request.session_id)
+        line_jobs = []
 
         for line in script_data:
             speaker = line.get("speaker", "Narrator")
             text = line.get("text", "")
             requested_voice = request.cast.get(speaker) or request.cast.get(speaker.lower())
-            voice_id = resolve_production_voice_id(requested_voice)
+            if requested_voice:
+                session.set_voice_mapping(speaker, requested_voice)
 
-            if not voice_id:
-                fallback_default = os.getenv("ELEVENLABS_DEFAULT_VOICE_ID")
-                if fallback_default:
-                    voice_id = fallback_default
-                else:
-                    raise ValueError(
-                        f"No ElevenLabs voice configured for '{speaker}'. "
-                        "Set ELEVENLABS_DEFAULT_VOICE_ID or a role-specific ELEVENLABS_VOICE_*_ID."
-                    )
+            line_jobs.append((speaker, text, requested_voice))
 
-            tasks.append(elevenlabs_text_to_speech(text, voice_id))
-
-        audio_results = await asyncio.gather(*tasks)
+        session.save()
+        audio_results = [None] * len(line_jobs)
+        for index, speaker, text, requested_voice in [
+            (index, speaker, text, requested_voice)
+            for index, (speaker, text, requested_voice) in enumerate(line_jobs)
+        ]:
+            audio_results[index] = await synthesize_scene_line(text, speaker, requested_voice)
 
         combined_audio = AudioSegment.empty()
         for audio_bytes in audio_results:
@@ -290,7 +486,8 @@ async def produce_scene(request: ProductionRequest):
 @router.post("/live-session")
 async def live_session(
     audio: UploadFile = File(...),
-    session_id: Optional[str] = Form(None)
+    session_id: Optional[str] = Form(None),
+    mode: Optional[str] = Form(None),
 ):
     session = Session.load(session_id)
     audio_bytes = await audio.read()
@@ -328,19 +525,22 @@ async def live_session(
             return JSONResponse({"error": "Speech recognition service is unavailable"}, status_code=503)
 
         session.add_message("user", user_text)
-        result = await generate_response(user_text, session)
+        result = await generate_response(user_text, session, requested_mode=mode)
         reply = result["data"]
+        is_scene = result["type"] == "scene"
         session.add_message("assistant", reply)
         session.save()
         audio_reply = await text_to_speech(reply)
+        scene_characters = build_scene_character_map(session, reply) if is_scene else session.characters
 
         return JSONResponse({
             "user_text": user_text,
             "reply": reply,
             "audio": base64.b64encode(audio_reply).decode() if audio_reply else None,
             "session_id": session.session_id,
-            "trigger_cast": result["type"] == "scene",
-            "characters": session.characters
+            "mode": session.mode,
+            "trigger_cast": is_scene,
+            "characters": scene_characters
         })
 
     except Exception as e:

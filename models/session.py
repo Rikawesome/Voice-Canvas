@@ -13,12 +13,14 @@ class Session:
         session_id: str = None,
         mode: str = "gist",
         messages: List[Dict] = None,
+        story_lore: str = "",
         characters: Dict = None,
         temp_characters: Dict = None
     ):
         self.session_id = session_id or str(uuid.uuid4())
         self.mode = mode
         self.messages = messages or []
+        self.story_lore = story_lore or ""
 
         # 🧠 Permanent characters (core cast)
         self.characters = characters or {}
@@ -39,6 +41,32 @@ class Session:
         # Keep memory tight for performance
         if len(self.messages) > 20:
             self.messages = self.messages[-20:]
+
+    def set_mode(self, mode: Optional[str]):
+        normalized = (mode or "").strip().lower()
+        if normalized in {"gist", "workshop", "scene", "production"}:
+            self.mode = "scene" if normalized == "production" else normalized
+
+    def refresh_story_lore(self):
+        if len(self.messages) <= 10:
+            return
+
+        older_messages = self.messages[:-5]
+        summary_bits = []
+        for message in older_messages[-10:]:
+            role = message.get("role", "unknown")
+            content = str(message.get("content", "")).strip()
+            if not content:
+                continue
+
+            compact = " ".join(content.split())
+            if len(compact) > 140:
+                compact = compact[:137] + "..."
+
+            summary_bits.append(f"{role}: {compact}")
+
+        if summary_bits:
+            self.story_lore = " | ".join(summary_bits[-8:])
 
     # =========================
     # 🧠 PERMANENT CHARACTERS
@@ -61,6 +89,16 @@ class Session:
 
         if vibe:
             self.characters[name]["vibe"] = vibe
+
+    def set_voice_mapping(self, name: str, voice_mapping: Optional[str]):
+        if name not in self.characters:
+            self.characters[name] = {
+                "traits": [],
+                "vibe": "unknown",
+                "voice_mapping": None
+            }
+
+        self.characters[name]["voice_mapping"] = voice_mapping
 
     # =========================
     # 🌫️ TEMPORARY CHARACTERS
@@ -100,6 +138,7 @@ class Session:
             "session_id": self.session_id,
             "mode": self.mode,
             "messages": self.messages,
+            "story_lore": self.story_lore,
             "characters": self.characters,
             "temp_characters": self.temp_characters
         }
@@ -123,6 +162,7 @@ class Session:
                     session_id=data.get("session_id"),
                     mode=data.get("mode", "gist"),
                     messages=data.get("messages", []),
+                    story_lore=data.get("story_lore", ""),
                     characters=data.get("characters", {}),
                     temp_characters=data.get("temp_characters", {})
                 )

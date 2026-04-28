@@ -1,21 +1,15 @@
 let currentSessionId = localStorage.getItem('voicecanvas_session_id') || null;
 let autoTTSEnabled = true;
+let currentMode = 'gist';
 
-// =========================
-// LIVE STATE ENGINE
-// =========================
 let isLiveMode = false;
 let liveStream = null;
-
 let isRecording = false;
 let mediaRecorder = null;
 let audioChunks = [];
-
 let currentAudio = null;
+let lastSceneScript = null;
 
-// =========================
-// DOM
-// =========================
 const inputField = document.getElementById('user-input');
 const messagesDiv = document.getElementById('messages');
 const micBtn = document.getElementById('mic-btn');
@@ -23,10 +17,58 @@ const sendBtn = document.getElementById('send-btn');
 const ttsToggle = document.getElementById('toggle-tts-btn');
 const castingModal = document.getElementById('casting-modal');
 const charList = document.getElementById('character-list');
+const liveStatus = document.getElementById('live-status');
+const modeIndicator = document.getElementById('mode-indicator');
+const chatModeBtn = document.getElementById('chat-mode-btn');
+const workshopModeBtn = document.getElementById('workshop-mode-btn');
+const sceneModeBtn = document.getElementById('scene-mode-btn');
 
-// =========================
-// 💬 TEXT CHAT
-// =========================
+const MODE_META = {
+    gist: {
+        label: 'GIST',
+        placeholder: 'Wetin dey sup?...',
+    },
+    workshop: {
+        label: 'WORKSHOP',
+        placeholder: 'Shape the idea, plot beats, or story arc...',
+    },
+    scene: {
+        label: 'PRODUCTION',
+        placeholder: 'Describe the scene you want played out...',
+    },
+};
+
+const PRODUCTION_VOICES = [
+    { value: 'narrator', label: 'Narrator' },
+    { value: 'lead_male', label: 'Lead Male' },
+    { value: 'lead_female', label: 'Lead Female' },
+    { value: 'villain', label: 'Villain' },
+];
+
+function setMode(mode) {
+    currentMode = MODE_META[mode] ? mode : 'gist';
+    document.body.dataset.mode = currentMode;
+    modeIndicator.innerText = MODE_META[currentMode].label;
+    inputField.placeholder = MODE_META[currentMode].placeholder;
+
+    chatModeBtn.classList.toggle('active', currentMode === 'gist');
+    workshopModeBtn.classList.toggle('active', currentMode === 'workshop');
+    sceneModeBtn.classList.toggle('active', currentMode === 'scene');
+    updateLiveStatus();
+}
+
+function updateLiveStatus(detail = '') {
+    if (!isLiveMode) {
+        liveStatus.classList.remove('active');
+        liveStatus.innerHTML = '';
+        return;
+    }
+
+    const modeLabel = MODE_META[currentMode]?.label || 'GIST';
+    liveStatus.classList.add('active');
+    liveStatus.innerHTML = `<strong>Live Voice Chat</strong> is on in ${modeLabel} mode.${detail ? ` ${detail}` : ''}`;
+}
+
 async function sendMessage() {
     const text = inputField.value.trim();
     if (!text) return;
@@ -43,41 +85,48 @@ async function sendMessage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 message: text,
-                session_id: currentSessionId
-            })
+                session_id: currentSessionId,
+                mode: currentMode,
+            }),
         });
 
         const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data?.error || 'Request failed');
+        }
+
         updateSessionState(data);
+        if (data.trigger_cast) {
+            lastSceneScript = data.reply;
+            setMode('scene');
+        }
 
         animateText(typingDiv, data.reply);
 
         if (data.trigger_cast) {
+            attachSceneActions(typingDiv, data.characters);
             openCastingOffice(data.characters);
         }
 
         if (autoTTSEnabled && !data.trigger_cast) {
             speakExactText(data.reply);
         }
-
     } catch (e) {
-        typingDiv.innerText = "Network wahala 😭";
+        typingDiv.innerText = `Request failed: ${e.message}`;
     }
 }
 
-// =========================
-// TEXT ANIMATION
-// =========================
 function animateText(element, text) {
-    element.innerText = "";
+    element.dataset.rawText = text;
+    element.innerText = '';
 
-    const words = text.split(" ");
+    const words = text.split(' ');
     let i = 0;
 
     const interval = setInterval(() => {
         if (i < words.length) {
-            element.innerText += words[i] + " ";
-            i++;
+            element.innerText += words[i] + ' ';
+            i += 1;
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         } else {
             clearInterval(interval);
@@ -85,9 +134,6 @@ function animateText(element, text) {
     }, 35);
 }
 
-// =========================
-// 🔊 EXACT VOICE SYNC (FIXED)
-// =========================
 async function speakExactText(text) {
     try {
         const res = await fetch('/chat/speak', {
@@ -95,23 +141,20 @@ async function speakExactText(text) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 message: text,
-                session_id: currentSessionId
-            })
+                session_id: currentSessionId,
+                mode: currentMode,
+            }),
         });
 
         if (!res.ok) return;
 
         const blob = await res.blob();
         playAudio(URL.createObjectURL(blob));
-
     } catch (e) {
-        console.error("TTS error", e);
+        console.error('TTS error', e);
     }
 }
 
-// =========================
-// 🔊 AUDIO PLAYER (INTERRUPT SAFE)
-// =========================
 function playAudio(source) {
     if (currentAudio) {
         currentAudio.pause();
@@ -122,9 +165,61 @@ function playAudio(source) {
     currentAudio.play().catch(() => {});
 }
 
-// =========================
-// 🎤 LIVE MODE ENGINE (FIXED CORE)
-// =========================
+function showProducedAudio(source, label = 'Scene audio ready') {
+    const container = document.createElement('div');
+    container.className = 'message assistant';
+    container.style.display = 'flex';
+    container.style.flexDirection = 'column';
+    container.style.gap = '8px';
+
+    const title = document.createElement('div');
+    title.innerText = label;
+
+    const audio = document.createElement('audio');
+    audio.controls = true;
+    audio.preload = 'auto';
+    audio.src = source;
+    audio.style.width = '100%';
+
+    const download = document.createElement('a');
+    download.href = source;
+    download.download = 'voicecanvas-scene.mp3';
+    download.innerText = 'Download scene audio';
+    download.style.color = '#7ee7cf';
+    download.style.fontSize = '14px';
+
+    container.appendChild(title);
+    container.appendChild(audio);
+    container.appendChild(download);
+    messagesDiv.appendChild(container);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+    currentAudio = audio;
+    audio.play().catch(() => {});
+}
+
+function attachSceneActions(messageElement, characters) {
+    const actions = document.createElement('div');
+    actions.className = 'scene-actions';
+
+    const produceBtn = document.createElement('button');
+    produceBtn.className = 'scene-action-btn';
+    produceBtn.innerText = 'Cast and Produce';
+    produceBtn.onclick = () => openCastingOffice(characters);
+
+    const workshopBtn = document.createElement('button');
+    workshopBtn.className = 'scene-action-btn';
+    workshopBtn.innerText = 'Back to Workshop';
+    workshopBtn.onclick = () => {
+        setMode('workshop');
+        inputField.focus();
+    };
+
+    actions.appendChild(produceBtn);
+    actions.appendChild(workshopBtn);
+    messageElement.appendChild(actions);
+}
+
 micBtn.onclick = () => {
     if (!isLiveMode) {
         startLiveMode();
@@ -136,56 +231,50 @@ micBtn.onclick = () => {
 async function startLiveMode() {
     try {
         liveStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
         isLiveMode = true;
         micBtn.classList.add('active-live');
-        micBtn.innerText = "🟢 LIVE";
-
-        appendMessage("assistant", "🎙️ Live session ON — I'm listening...");
-
+        micBtn.innerText = 'LIVE';
+        updateLiveStatus('Listening for your next take...');
+        appendMessage('assistant', "Live session ON - I'm listening...");
         startRecordingLoop(liveStream);
-
     } catch (e) {
-        alert("Mic permission blocked");
+        alert('Mic permission blocked');
     }
 }
 
 function stopLiveMode() {
     isLiveMode = false;
-
     micBtn.classList.remove('active-live');
-    micBtn.innerText = "🎙️";
+    micBtn.innerText = 'Mic';
+    updateLiveStatus();
 
     if (mediaRecorder && isRecording) {
         mediaRecorder.stop();
     }
 
     if (liveStream) {
-        liveStream.getTracks().forEach(t => t.stop());
+        liveStream.getTracks().forEach(track => track.stop());
         liveStream = null;
     }
 
-    appendMessage("assistant", "🛑 Live session OFF");
+    appendMessage('assistant', 'Live session OFF');
 }
 
-// =========================
-// 🔁 TRUE LIVE LOOP (KEY FIX)
-// =========================
 function startRecordingLoop(stream) {
     audioChunks = [];
     mediaRecorder = new MediaRecorder(stream);
 
-    mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunks.push(e.data);
+    mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+            audioChunks.push(event.data);
+        }
     };
 
     mediaRecorder.onstop = async () => {
         const blob = new Blob(audioChunks, { type: 'audio/webm' });
-
         if (isLiveMode) {
+            updateLiveStatus('Transcribing and replying...');
             await sendLiveAudio(blob);
-
-            // 🔥 CRITICAL: keeps session alive
             startRecordingLoop(stream);
         }
     };
@@ -194,58 +283,59 @@ function startRecordingLoop(stream) {
     isRecording = true;
 }
 
-// =========================
-// 🎧 SEND LIVE AUDIO
-// =========================
 async function sendLiveAudio(blob) {
     const fd = new FormData();
     fd.append('audio', blob);
-    if (currentSessionId) fd.append('session_id', currentSessionId);
+    if (currentSessionId) {
+        fd.append('session_id', currentSessionId);
+    }
+    fd.append('mode', currentMode);
 
     const typingDiv = appendMessage('assistant', '...');
 
     try {
         const res = await fetch('/chat/live-session', {
             method: 'POST',
-            body: fd
+            body: fd,
         });
 
         const data = await res.json();
-        updateSessionState(data);
+        if (!res.ok) {
+            throw new Error(data?.error || 'Live session failed');
+        }
 
+        updateSessionState(data);
         typingDiv.innerText = data.reply;
+        typingDiv.dataset.rawText = data.reply;
+        updateLiveStatus(data.user_text ? `Heard: "${data.user_text}"` : 'Listening for your next take...');
 
         if (data.audio) {
-            playAudio("data:audio/mpeg;base64," + data.audio);
+            playAudio('data:audio/mpeg;base64,' + data.audio);
         }
 
         if (data.trigger_cast) {
+            lastSceneScript = data.reply;
+            setMode('scene');
+            attachSceneActions(typingDiv, data.characters);
             openCastingOffice(data.characters);
         }
-
     } catch (e) {
-        typingDiv.innerText = "Mic error 😭";
+        updateLiveStatus(`Error: ${e.message}`);
+        typingDiv.innerText = `Mic error: ${e.message}`;
     }
 }
 
-// =========================
-// 🎭 CASTING OFFICE
-// =========================
 function openCastingOffice(characters) {
     charList.innerHTML = '';
 
-    const voices = [
-        { value: "narrator", label: "Narrator" },
-        { value: "lead_male", label: "Lead Male" },
-        { value: "lead_female", label: "Lead Female" },
-        { value: "villain", label: "Villain" }
-    ];
-
-    const chars = characters || {};
+    const chars = (characters && Object.keys(characters).length)
+        ? characters
+        : inferSceneCharactersFromLastReply();
 
     Object.keys(chars).forEach(name => {
         const card = document.createElement('div');
         card.className = 'char-card';
+        const selectedVoice = chars[name].voice_mapping || guessVoiceForCharacter(name, chars[name]);
 
         card.innerHTML = `
             <div>
@@ -254,7 +344,7 @@ function openCastingOffice(characters) {
             </div>
 
             <select class="voice-select" data-char="${name}">
-                ${voices.map(v => `<option value="${v.value}">${v.label}</option>`).join('')}
+                ${PRODUCTION_VOICES.map(voice => `<option value="${voice.value}" ${voice.value === selectedVoice ? 'selected' : ''}>${voice.label}</option>`).join('')}
             </select>
         `;
 
@@ -265,22 +355,16 @@ function openCastingOffice(characters) {
     messagesDiv.style.opacity = '0.2';
 }
 
-// =========================
-// 🎬 PRODUCTION
-// =========================
 async function handleProduction() {
     const cast = {};
-    document.querySelectorAll('.voice-select').forEach(s => {
-        cast[s.dataset.char] = s.value;
+    document.querySelectorAll('.voice-select').forEach(select => {
+        cast[select.dataset.char] = select.value;
     });
 
-    const lastMsg = [...document.querySelectorAll('.assistant')].pop();
-    const scriptText = lastMsg?.innerText || "";
-
+    const scriptText = getLatestSceneScript();
     castingModal.style.display = 'none';
     messagesDiv.style.opacity = '1';
-
-    appendMessage("assistant", "🎬 Producing scene...");
+    appendMessage('assistant', 'Producing scene...');
 
     try {
         const res = await fetch('/chat/produce', {
@@ -289,35 +373,86 @@ async function handleProduction() {
             body: JSON.stringify({
                 script: scriptText,
                 cast,
-                session_id: currentSessionId
-            })
+                session_id: currentSessionId,
+            }),
         });
 
         if (!res.ok) {
             const errorData = await res.json().catch(() => null);
-            const message = errorData?.details || errorData?.error || "Production failed";
+            const message = errorData?.details || errorData?.error || 'Production failed';
             throw new Error(message);
         }
 
         const blob = await res.blob();
-        playAudio(URL.createObjectURL(blob));
+        if (!blob.size) {
+            throw new Error('Production returned empty audio');
+        }
 
+        const audioUrl = URL.createObjectURL(blob);
+        showProducedAudio(audioUrl);
     } catch (e) {
-        appendMessage("assistant", `Production failed: ${e.message}`);
+        appendMessage('assistant', `Production failed: ${e.message}`);
     }
 }
 
-// =========================
-// 🛠 UI HELPERS
-// =========================
+function inferSceneCharactersFromLastReply() {
+    const scriptText = getLatestSceneScript();
+    const characters = {};
+
+    try {
+        const parsed = JSON.parse(scriptText);
+        if (!Array.isArray(parsed)) return characters;
+
+        parsed.forEach(line => {
+            const speaker = (line?.speaker || '').trim();
+            if (!speaker) return;
+
+            characters[speaker] = characters[speaker] || {
+                vibe: 'Generated for this scene',
+                voice_mapping: guessVoiceForCharacter(speaker),
+            };
+        });
+    } catch (e) {
+        console.warn('Unable to infer scene characters from last reply', e);
+    }
+
+    return characters;
+}
+
+function getLatestSceneScript() {
+    if (lastSceneScript && lastSceneScript.trim()) {
+        return lastSceneScript;
+    }
+
+    const assistantMessages = [...document.querySelectorAll('.assistant')];
+    const lastMsg = assistantMessages[assistantMessages.length - 1];
+    return lastMsg?.dataset?.rawText || lastMsg?.innerText || '';
+}
+
+function guessVoiceForCharacter(name, details = {}) {
+    const lowered = (name || '').toLowerCase();
+    const vibe = (details?.vibe || '').toLowerCase();
+
+    if (lowered.includes('narrator') || vibe.includes('narrator')) {
+        return 'narrator';
+    }
+    if (vibe.includes('female') || ['mikasa', 'historia', 'sasha', 'annie'].includes(lowered)) {
+        return 'lead_female';
+    }
+    if (vibe.includes('villain') || ['reiner', 'zeke', 'villain'].includes(lowered)) {
+        return 'villain';
+    }
+
+    return 'lead_male';
+}
+
 function appendMessage(role, text) {
     const div = document.createElement('div');
     div.className = `message ${role}`;
     div.innerText = text;
-
+    div.dataset.rawText = text;
     messagesDiv.appendChild(div);
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
-
     return div;
 }
 
@@ -326,6 +461,9 @@ function updateSessionState(data) {
         currentSessionId = data.session_id;
         localStorage.setItem('voicecanvas_session_id', currentSessionId);
     }
+    if (data.mode && MODE_META[data.mode]) {
+        setMode(data.mode);
+    }
 }
 
 function toggleInputButtons(hasText) {
@@ -333,24 +471,27 @@ function toggleInputButtons(hasText) {
     micBtn.style.display = hasText ? 'none' : 'flex';
 }
 
-// =========================
-// 🚀 INIT
-// =========================
 window.onload = () => {
     inputField.addEventListener('input', () =>
         toggleInputButtons(inputField.value.trim().length > 0)
     );
 
     sendBtn.onclick = sendMessage;
-    inputField.onkeypress = (e) => {
-        if (e.key === 'Enter') sendMessage();
+    chatModeBtn.onclick = () => setMode('gist');
+    workshopModeBtn.onclick = () => setMode('workshop');
+    sceneModeBtn.onclick = () => setMode('scene');
+
+    inputField.onkeypress = (event) => {
+        if (event.key === 'Enter') {
+            sendMessage();
+        }
     };
 
     document.getElementById('start-production-btn').onclick = handleProduction;
 
     ttsToggle.onclick = () => {
         autoTTSEnabled = !autoTTSEnabled;
-        ttsToggle.innerText = autoTTSEnabled ? "🔊" : "🔇";
+        ttsToggle.innerText = autoTTSEnabled ? 'Audio On' : 'Audio Off';
     };
 
     document.getElementById('new-session-btn').onclick = () => {
@@ -358,5 +499,8 @@ window.onload = () => {
         location.reload();
     };
 
-    appendMessage("assistant", "VoiceCanvas ready 🎙️ — tap mic for live mode or type");
+    ttsToggle.innerText = 'Audio On';
+    micBtn.innerText = 'Mic';
+    setMode('gist');
+    appendMessage('assistant', 'VoiceCanvas ready - gist, workshop, or produce a full scene.');
 };
