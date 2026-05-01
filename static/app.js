@@ -23,6 +23,11 @@ const chatModeBtn = document.getElementById('chat-mode-btn');
 const workshopModeBtn = document.getElementById('workshop-mode-btn');
 const sceneModeBtn = document.getElementById('scene-mode-btn');
 
+// DNA elements
+const dnaBtn = document.getElementById('dna-btn');
+const dnaInput = document.getElementById('dna-upload');
+const dnaStatus = document.getElementById('dna-status');
+
 const MODE_META = {
     gist: {
         label: 'GIST',
@@ -44,6 +49,37 @@ const PRODUCTION_VOICES = [
     { value: 'lead_female', label: 'Lead Female' },
     { value: 'villain', label: 'Villain' },
 ];
+
+// 🧬 DNA UPLOAD LOGIC
+dnaBtn.onclick = () => dnaInput.click();
+
+dnaInput.onchange = async () => {
+    if (!dnaInput.files[0]) return;
+    
+    dnaStatus.innerText = "Extracting DNA... 🧬";
+    const formData = new FormData();
+    formData.append('file', dnaInput.files[0]);
+
+    try {
+        const res = await fetch(`/chat/upload-dna/${currentSessionId || 'new'}`, {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+        
+        if (data.status === 'success') {
+            dnaStatus.innerText = "DNA LOCKED ✅";
+            dnaStatus.style.color = "var(--accent)";
+            if (data.session_id) updateSessionState(data);
+            console.log("Technical DNA Extracted:", data.dna);
+        } else {
+            dnaStatus.innerText = "Failed ❌";
+        }
+    } catch (err) {
+        dnaStatus.innerText = "Error ❌";
+        console.error(err);
+    }
+};
 
 function setMode(mode) {
     currentMode = MODE_META[mode] ? mode : 'gist';
@@ -339,8 +375,8 @@ function openCastingOffice(characters) {
 
         card.innerHTML = `
             <div>
-                <strong>${name}</strong><br>
-                <small>${chars[name].vibe || 'Character'}</small>
+                <strong class="char-name">${name}</strong><br>
+                <small class="char-vibe">${chars[name].vibe || 'Character'}</small>
             </div>
 
             <select class="voice-select" data-char="${name}">
@@ -499,8 +535,7 @@ window.onload = () => {
         location.reload();
     };
 
-    ttsToggle.innerText = 'Audio On';
-    micBtn.innerText = 'Mic';
+    // Initialize UI
     setMode('gist');
     appendMessage('assistant', 'VoiceCanvas ready - gist, workshop, or produce a full scene.');
 };

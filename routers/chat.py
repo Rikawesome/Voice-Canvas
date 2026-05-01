@@ -15,7 +15,7 @@ from typing import Optional, Dict, List
 from pydub import AudioSegment
 from dotenv import load_dotenv
 
-from services.llm import generate_response
+from services.llm import generate_response, identify_character_from_text
 from models.session import Session
 import edge_tts
 import httpx
@@ -345,7 +345,7 @@ async def elevenlabs_text_to_speech(text: str, voice_id: str) -> bytes:
 
 
 # =========================
-# 💬 CHAT ROUTE (Base)
+# 💬 CHAT ROUTE
 # =========================
 
 @router.post("/")
@@ -386,7 +386,7 @@ async def chat(request: ChatRequest):
 
 
 # =========================
-# 🎧 STREAM AUDIO (NEW 🔥)
+# 🎧 STREAM AUDIO
 # =========================
 
 @router.post("/stream-audio")
@@ -398,11 +398,9 @@ async def stream_audio(request: ChatRequest):
     voice = request.voice_override or "en-US-AndrewNeural"
 
     async def audio_generator():
-        # ⚡ Illusion: Start with a quick filler
         filler = await text_to_speech("Hmm—", voice)
         if filler: yield filler
 
-        # Split by sentences for smooth streaming
         parts = re.split(r'(?<=[.!?])\s+', reply_text)
         for chunk in [p.strip() for p in parts if p.strip()]:
             audio_bytes = await text_to_speech(chunk, voice)
@@ -413,7 +411,7 @@ async def stream_audio(request: ChatRequest):
 
 
 # =========================
-# 🎬 SCENE PRODUCTION (Parallel Processing)
+# 🎬 PRODUCTION
 # =========================
 
 @router.post("/speak")
@@ -553,3 +551,53 @@ async def live_session(
             os.remove(tmp_path)
         if wav_path and os.path.exists(wav_path):
             os.remove(wav_path)
+
+# =========================
+# 🧬 VISUAL SECTION (FIXED)
+# =========================
+from services.vision import extract_visual_dna 
+
+@router.post("/upload-dna/{session_id}")
+async def upload_dna(
+    session_id: str,
+    file: UploadFile = File(...),
+    target_name: Optional[str] = Form(None),
+    user_caption: Optional[str] = Form(None),
+):
+    try:
+        # Resolving "new" sessions or loading existing ones
+        if session_id == "new" or not session_id or session_id == "null":
+            session = Session()
+        else:
+            session = Session.load(session_id)
+        
+        image_bytes = await file.read()
+        print(f"🧬 Extracting DNA for session: {session.session_id}")
+        
+        dna_string = await extract_visual_dna(image_bytes)
+        
+        resolved_target = target_name or await identify_character_from_text(user_caption, session)
+
+        if resolved_target and resolved_target in session.characters:
+            session.characters[resolved_target]["dna"] = dna_string
+            message = f"Visual DNA locked for {resolved_target}."
+        elif resolved_target and resolved_target in session.temp_characters:
+            session.temp_characters[resolved_target]["dna"] = dna_string
+            message = f"Visual DNA locked for temporary character {resolved_target}."
+        else:
+            session.visual_dna = dna_string
+            message = "Visual DNA locked to Lead User."
+        session.save()
+        
+        return JSONResponse({
+            "status": "success",
+            "dna": dna_string,
+            "session_id": session.session_id,
+            "target": resolved_target or "Lead User",
+            "caption": user_caption,
+            "message": message
+        })
+    except Exception as e:
+        print(f"❌ DNA Upload Error: {e}")
+        traceback.print_exc()
+        return JSONResponse({"error": str(e)}, status_code=500)

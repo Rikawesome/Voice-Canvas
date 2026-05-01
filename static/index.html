@@ -152,6 +152,18 @@
             color: #ffffff;
         }
 
+        /* 🧬 DNA Row Style */
+        .dna-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 12px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+            margin-bottom: 8px;
+            border: 1px solid #374045;
+        }
+
         .mode-row {
             display: flex;
             gap: 8px;
@@ -201,6 +213,9 @@
             cursor: pointer;
             background: var(--accent);
             color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         #mic-btn.active-live {
@@ -269,7 +284,6 @@
 
 <body data-mode="gist">
 
-    <!-- HEADER -->
     <header>
         <span class="logo">VoiceCanvas</span>
 
@@ -283,7 +297,6 @@
         </div>
     </header>
 
-    <!-- CASTING MODAL -->
     <div id="casting-modal">
         <div class="modal-card">
 
@@ -313,12 +326,16 @@
         </div>
     </div>
 
-    <!-- CHAT -->
     <div id="messages"></div>
 
-    <!-- INPUT -->
     <div class="input-area">
         <div id="live-status" class="live-status"></div>
+
+        <div class="dna-row">
+            <input type="file" id="dna-upload" accept="image/*" style="display: none;" />
+            <button id="dna-btn" class="mode-btn" style="flex: 0 0 auto; border-radius: 8px;">📸 Setup DNA</button>
+            <span id="dna-status" style="font-size: 11px; color: #8696a0;">No character loaded</span>
+        </div>
 
         <div class="mode-row">
             <button id="chat-mode-btn" class="mode-btn active">Gist Mode</button>
@@ -328,7 +345,7 @@
 
         <div class="input-row">
 
-            <button id="toggle-tts-btn">🔊</button>
+            <button id="toggle-tts-btn" style="background:none; border:none; font-size:20px; cursor:pointer;">🔊</button>
 
             <input id="user-input" placeholder="Wetin dey sup?..." />
 
@@ -339,7 +356,6 @@
         </div>
     </div>
 
-    <!-- SCRIPT -->
     <script src="/static/app.js"></script>
 
 </body>

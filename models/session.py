@@ -1,7 +1,7 @@
 import json
 import os
 import uuid
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 
 SESSIONS_DIR = "data/sessions"
 os.makedirs(SESSIONS_DIR, exist_ok=True)
@@ -15,30 +15,50 @@ class Session:
         messages: List[Dict] = None,
         story_lore: str = "",
         characters: Dict = None,
-        temp_characters: Dict = None
+        temp_characters: Dict = None,
+        visual_dna: str = "",
+        location_context: str = "",
     ):
         self.session_id = session_id or str(uuid.uuid4())
         self.mode = mode
         self.messages = messages or []
         self.story_lore = story_lore or ""
+        self.visual_dna = visual_dna or ""
+        self.location_context = location_context or ""
+        self.characters = self._normalize_characters(characters)
+        self.temp_characters = self._normalize_characters(
+            temp_characters,
+            include_description=True,
+        )
 
-        # 🧠 Permanent characters (core cast)
-        self.characters = characters or {}
-
-        # 🌫️ Temporary scene-only characters
-        self.temp_characters = temp_characters or {}
+    @staticmethod
+    def _normalize_characters(
+        characters: Dict = None,
+        include_description: bool = False,
+    ) -> Dict:
+        normalized = {}
+        for name, data in (characters or {}).items():
+            entry = dict(data or {})
+            entry.setdefault("traits", [])
+            entry.setdefault("vibe", "unknown")
+            entry.setdefault("dna", "")
+            if include_description:
+                entry.setdefault("description", "")
+            else:
+                entry.setdefault("voice_mapping", None)
+            normalized[name] = entry
+        return normalized
 
     # =========================
-    # 💬 MESSAGE HANDLING
+    # MESSAGE HANDLING
     # =========================
 
     def add_message(self, role: str, content: str):
         self.messages.append({
             "role": role,
-            "content": content
+            "content": content,
         })
 
-        # Keep memory tight for performance
         if len(self.messages) > 20:
             self.messages = self.messages[-20:]
 
@@ -69,7 +89,7 @@ class Session:
             self.story_lore = " | ".join(summary_bits[-8:])
 
     # =========================
-    # 🧠 PERMANENT CHARACTERS
+    # PERMANENT CHARACTERS
     # =========================
 
     def update_character(self, name: str, traits: List[str] = None, vibe: str = None):
@@ -77,10 +97,10 @@ class Session:
             self.characters[name] = {
                 "traits": [],
                 "vibe": "unknown",
-                "voice_mapping": None
+                "voice_mapping": None,
+                "dna": "",
             }
 
-        # Merge traits without destroying order
         if traits:
             existing = self.characters[name]["traits"]
             for trait in traits:
@@ -95,26 +115,34 @@ class Session:
             self.characters[name] = {
                 "traits": [],
                 "vibe": "unknown",
-                "voice_mapping": None
+                "voice_mapping": None,
+                "dna": "",
             }
 
         self.characters[name]["voice_mapping"] = voice_mapping
 
     # =========================
-    # 🌫️ TEMPORARY CHARACTERS
+    # TEMPORARY CHARACTERS
     # =========================
 
-    def add_temp_character(self, name: str, description: str = "", traits: List[str] = None, vibe: str = "unknown"):
+    def add_temp_character(
+        self,
+        name: str,
+        description: str = "",
+        traits: List[str] = None,
+        vibe: str = "unknown",
+    ):
         if name not in self.temp_characters:
             self.temp_characters[name] = {
                 "description": description,
                 "traits": traits or [],
-                "vibe": vibe
+                "vibe": vibe,
+                "dna": "",
             }
 
     def promote_character(self, name: str):
         """
-        Move temp character → permanent cast (when they become recurring)
+        Move temp character -> permanent cast when they become recurring.
         """
         if name in self.temp_characters:
             temp = self.temp_characters[name]
@@ -122,13 +150,14 @@ class Session:
             self.update_character(
                 name=name,
                 traits=temp.get("traits", []),
-                vibe=temp.get("vibe", "unknown")
+                vibe=temp.get("vibe", "unknown"),
             )
+            self.characters[name]["dna"] = temp.get("dna", "")
 
             del self.temp_characters[name]
 
     # =========================
-    # 💾 SAVE / LOAD
+    # SAVE / LOAD
     # =========================
 
     def save(self):
@@ -140,7 +169,9 @@ class Session:
             "messages": self.messages,
             "story_lore": self.story_lore,
             "characters": self.characters,
-            "temp_characters": self.temp_characters
+            "temp_characters": self.temp_characters,
+            "visual_dna": self.visual_dna,
+            "location_context": self.location_context,
         }
 
         with open(filepath, "w", encoding="utf-8") as f:
@@ -164,11 +195,13 @@ class Session:
                     messages=data.get("messages", []),
                     story_lore=data.get("story_lore", ""),
                     characters=data.get("characters", {}),
-                    temp_characters=data.get("temp_characters", {})
+                    temp_characters=data.get("temp_characters", {}),
+                    visual_dna=data.get("visual_dna", ""),
+                    location_context=data.get("location_context", ""),
                 )
 
             except Exception as e:
-                print(f"⚠️ Session load error: {e}")
+                print(f"Session load error: {e}")
                 return cls(session_id=session_id)
 
         return cls(session_id=session_id)
