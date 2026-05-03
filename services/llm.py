@@ -10,6 +10,10 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 
+MAX_BIBLE_CHARS = 2400
+MAX_MEMORY_CHARS = 900
+MAX_USER_INPUT_CHARS = 1200
+
 GIST_SYSTEM_PROMPT = """
 You are Andrew, a witty bestie.
 
@@ -47,12 +51,18 @@ CHARACTER BIBLE (Visual DNA & Known Cast):
 RULES:
 - Output ONLY valid JSON.
 - Breakdown the request into EXACTLY 4 panels for a single manga page.
+- Each item in the JSON is ONE single panel beat only.
+- Each panel must describe ONE camera shot, ONE moment, and ONE composition only.
+- Never describe a full page, multi-panel layout, split screen, collage, or comic grid inside a single panel.
 - For each panel, provide:
     1. "speaker": Character name.
     2. "text": The dialogue.
-    3. "visual_description": A technical prompt for the artist.
+    3. "visual_description": A strict single-panel shot description for an image generator.
+   Format: [single camera shot] + [Character DNA] + [Action/Emotion] + [Locked Background].
+   Example: "Close-up single panel, Shizuki (obsidian curtain bangs, violet sanpaku eyes) staring upward on a rusty rooftop at night, moody rim light."
        MUST use the Visual DNA tags for consistency.
 - Maintain a single location across all 4 panels to save on environment drift.
+- Favor close-up, medium shot, over-shoulder, or wide shot language instead of page-layout language.
 
 FORMAT:
 [
@@ -97,6 +107,8 @@ async def call_llm(messages, max_tokens=120, temperature=0.8):
                     "temperature": temperature,
                 },
             )
+            if response.status_code == 413:
+                raise RuntimeError("Groq request failed: 413 Payload Too Large")
             response.raise_for_status()
             return response.json()["choices"][0]["message"]["content"].strip()
     except Exception as exc:
@@ -114,6 +126,13 @@ async def complete_if_needed(messages, draft: str, max_tokens: int, temperature:
     ]
     continuation = await call_llm(continuation_messages, max_tokens=200, temperature=temperature)
     return f"{trimmed} {continuation}".strip()
+
+
+def clamp_text(text: str, limit: int) -> str:
+    compact = " ".join((text or "").split())
+    if len(compact) <= limit:
+        return compact
+    return compact[: max(0, limit - 3)] + "..."
 
 
 def build_character_bible(session):
@@ -138,7 +157,8 @@ def build_character_bible(session):
         lines.append(f"  - Vibe: {vibe}")
         lines.append("")
 
-    return "\n".join(lines).strip() if lines else "No characters or DNA defined."
+    bible = "\n".join(lines).strip() if lines else "No characters or DNA defined."
+    return clamp_text(bible, MAX_BIBLE_CHARS)
 
 
 def build_memory_anchor(session) -> str:
@@ -149,7 +169,7 @@ def build_memory_anchor(session) -> str:
     location_context = getattr(session, "location_context", "") or ""
     recent_messages = getattr(session, "messages", [])[-5:]
     recent_bits = [
-        f"{message.get('role')}: {message.get('content')[:180]}"
+        f"{message.get('role')}: {clamp_text(message.get('content', ''), 120)}"
         for message in recent_messages
         if message.get("content")
     ]
@@ -161,7 +181,7 @@ def build_memory_anchor(session) -> str:
         sections.append(f"Locked location: {location_context}")
     if recent_bits:
         sections.append("Recent exchange:\n" + "\n".join(recent_bits))
-    return "\n\n".join(sections)
+    return clamp_text("\n\n".join(sections), MAX_MEMORY_CHARS)
 
 
 def _match_character_name(text: str, session) -> str | None:
@@ -270,7 +290,8 @@ async def generate_chat_response(user_input: str, session=None, mode: str = "gis
     bible = build_character_bible(session)
     memory_anchor = build_memory_anchor(session)
 
-    user_content = user_input if not memory_anchor else f"{memory_anchor}\n\nUser request: {user_input}"
+    clean_input = clamp_text(user_input, MAX_USER_INPUT_CHARS)
+    user_content = clean_input if not memory_anchor else f"{memory_anchor}\n\nUser request: {clean_input}"
 
     messages = [
         {"role": "system", "content": settings["system_prompt"].format(characters_bible=bible)},
@@ -288,7 +309,8 @@ async def generate_scene(session, prompt: str):
     memory_anchor = build_memory_anchor(session)
     location_context = getattr(session, "location_context", "") if session else ""
 
-    prompt_content = prompt if not memory_anchor else f"{memory_anchor}\n\nScene request: {prompt}"
+    clean_prompt = clamp_text(prompt, MAX_USER_INPUT_CHARS)
+    prompt_content = clean_prompt if not memory_anchor else f"{memory_anchor}\n\nScene request: {clean_prompt}"
     batch_instruction = "\n\nINSTRUCTION: Return ONLY JSON. 4 panels. Use visual_dna for all character descriptions."
     if location_context:
         batch_instruction += (

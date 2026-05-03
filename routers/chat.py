@@ -6,6 +6,7 @@ import base64
 import asyncio
 import tempfile
 import traceback
+import uuid
 import speech_recognition as sr
 
 from fastapi import APIRouter, UploadFile, File, Form
@@ -28,6 +29,8 @@ ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_MODEL_ID = os.getenv("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
 ELEVENLABS_OUTPUT_FORMAT = os.getenv("ELEVENLABS_OUTPUT_FORMAT", "mp3_44100_128")
 ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1/text-to-speech"
+REFERENCE_IMAGES_DIR = os.path.join("data", "reference_images")
+os.makedirs(REFERENCE_IMAGES_DIR, exist_ok=True)
 
 PRODUCTION_VOICE_ENV_MAP = {
     "narrator": "ELEVENLABS_VOICE_NARRATOR_ID",
@@ -52,6 +55,47 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = None
     voice_override: Optional[str] = None
     mode: Optional[str] = None
+
+
+def resolve_session(session_id: Optional[str]) -> Session:
+    if session_id in {None, "", "new", "null"}:
+        return Session()
+    return Session.load(session_id)
+
+
+def is_user_identity_claim(text: Optional[str]) -> bool:
+    normalized = (text or "").strip().lower()
+    keywords = [
+        "this is me",
+        "it's me",
+        "its me",
+        "i look like",
+        "my photo",
+        "my picture",
+        "my profile",
+        "that's me",
+        "thats me",
+    ]
+    return any(keyword in normalized for keyword in keywords)
+
+
+def save_reference_image(session_id: str, image_bytes: bytes, filename: Optional[str], content_type: Optional[str] = None) -> str:
+    ext = os.path.splitext(filename or "")[1].lower()
+    if ext not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+        mime_ext = {
+            "image/jpeg": ".jpg",
+            "image/png": ".png",
+            "image/webp": ".webp",
+            "image/gif": ".gif",
+        }
+        ext = mime_ext.get((content_type or "").lower(), ".jpg")
+
+    session_dir = os.path.join(REFERENCE_IMAGES_DIR, session_id)
+    os.makedirs(session_dir, exist_ok=True)
+    path = os.path.join(session_dir, f"{uuid.uuid4().hex}{ext}")
+    with open(path, "wb") as image_file:
+        image_file.write(image_bytes)
+    return os.path.abspath(path)
 
 
 class ProductionRequest(BaseModel):
@@ -217,6 +261,26 @@ def build_scene_character_map(session: Session, script: str) -> Dict[str, Dict[s
     return characters
 
 
+async def process_chat_turn(session: Session, user_message: str, requested_mode: Optional[str] = None) -> Dict:
+    session.add_message("user", user_message)
+    result = await generate_response(user_message, session, requested_mode=requested_mode)
+
+    reply = result["data"]
+    is_scene = result["type"] == "scene"
+    scene_characters = build_scene_character_map(session, reply) if is_scene else session.characters
+
+    session.add_message("assistant", reply)
+    session.save()
+
+    return {
+        "reply": reply,
+        "session_id": session.session_id,
+        "mode": session.mode,
+        "trigger_cast": is_scene,
+        "characters": scene_characters,
+    }
+
+
 def resolve_production_voice_id(raw_voice: Optional[str]) -> Optional[str]:
     selected = (raw_voice or "").strip()
     if not selected:
@@ -350,26 +414,10 @@ async def elevenlabs_text_to_speech(text: str, voice_id: str) -> bytes:
 
 @router.post("/")
 async def chat(request: ChatRequest):
-    session = Session.load(request.session_id)
-    session.add_message("user", request.message)
+    session = resolve_session(request.session_id)
 
     try:
-        result = await generate_response(request.message, session, requested_mode=request.mode)
-
-        reply = result["data"]
-        is_scene = result["type"] == "scene"
-        scene_characters = build_scene_character_map(session, reply) if is_scene else session.characters
-
-        session.add_message("assistant", reply)
-        session.save()
-
-        return {
-            "reply": reply,
-            "session_id": session.session_id,
-            "mode": session.mode,
-            "trigger_cast": is_scene,
-            "characters": scene_characters
-        }
+        return await process_chat_turn(session, request.message, requested_mode=request.mode)
     except Exception as e:
         print(f"Chat Error: {e}")
         session.save()
@@ -380,6 +428,115 @@ async def chat(request: ChatRequest):
                 "mode": session.mode,
                 "trigger_cast": False,
                 "characters": session.characters,
+            },
+            status_code=502,
+        )
+
+
+@router.post("/message/{session_id}")
+async def chat_message(
+    session_id: str,
+    user_input: Optional[str] = Form(None),
+    mode: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+):
+    session = resolve_session(session_id)
+    dna_update_msg = None
+    effective_input = (user_input or "").strip()
+
+    try:
+        if file:
+            image_bytes = await file.read()
+            dna_string = await extract_visual_dna(image_bytes)
+            reference_image_path = save_reference_image(
+                session.session_id,
+                image_bytes,
+                getattr(file, "filename", None),
+                getattr(file, "content_type", None),
+            )
+
+            target_name = await identify_character_from_text(effective_input, session)
+            if target_name and target_name in session.characters:
+                session.characters[target_name]["dna"] = dna_string
+                session.characters[target_name]["reference_image_path"] = reference_image_path
+                dna_update_msg = f"Locked DNA for {target_name}"
+            elif target_name and target_name in session.temp_characters:
+                session.temp_characters[target_name]["dna"] = dna_string
+                session.temp_characters[target_name]["reference_image_path"] = reference_image_path
+                dna_update_msg = f"Locked DNA for temporary character {target_name}"
+            elif is_user_identity_claim(effective_input):
+                session.visual_dna = dna_string
+                session.visual_dna_image_path = reference_image_path
+                dna_update_msg = "Locked DNA to your profile."
+            else:
+                dna_update_msg = "Temporary DNA loaded for this message."
+                effective_input = (
+                    f"[IMAGE CONTEXT: character traits = {dna_string}] "
+                    f"{effective_input}".strip()
+                )
+
+            session.save()
+
+        chat_input = effective_input or "Look at this photo"
+        payload = await process_chat_turn(session, chat_input, requested_mode=mode)
+        if payload["trigger_cast"]:
+            try:
+                from services.painter import generate_manga_page
+
+                panels = extract_scene_json(payload["reply"])
+                manga_result = await generate_manga_page(panels, session)
+                payload["panels"] = manga_result.get("panels", [])
+                payload["manga_page"] = manga_result.get("page_data_url")
+                panel_errors = [item.get("error") for item in payload["panels"] if item.get("error")]
+                if panel_errors and not any(item.get("url") for item in payload["panels"]):
+                    joined_errors = " | ".join(panel_errors[:2])
+                    if "Insufficient credit" in joined_errors:
+                        payload["panel_error"] = (
+                            "Panel rendering is blocked by Replicate billing. "
+                            "Add credit or a payment method in your Replicate account, then try again."
+                        )
+                    elif "monthly included credits" in joined_errors or "402 Payment Required" in joined_errors:
+                        payload["panel_error"] = (
+                            "Panel rendering is blocked by Hugging Face Inference credits. "
+                            "Your included credits are depleted, so image generation will stay unavailable until you add credits or upgrade."
+                        )
+                    elif "rate limit" in joined_errors.lower() or "throttled" in joined_errors.lower():
+                        payload["panel_error"] = (
+                            "Panel rendering hit Replicate rate limits. "
+                            "Wait a few seconds and try Production mode again."
+                        )
+                    else:
+                        payload["panel_error"] = joined_errors
+            except Exception as painter_error:
+                print(f"Painter handoff failed: {painter_error}")
+                payload["panels"] = []
+                payload["panel_error"] = str(painter_error)
+        payload["data"] = payload["reply"]
+        payload["dna_status"] = dna_update_msg
+        return payload
+    except Exception as e:
+        print(f"Unified Chat Error: {e}")
+        if "413" in str(e):
+            return JSONResponse(
+                {
+                    "error": "Message too long. Try a shorter request.",
+                    "session_id": session.session_id,
+                    "mode": session.mode,
+                    "trigger_cast": False,
+                    "characters": session.characters,
+                    "dna_status": dna_update_msg,
+                },
+                status_code=413,
+            )
+        session.save()
+        return JSONResponse(
+            {
+                "error": str(e),
+                "session_id": session.session_id,
+                "mode": session.mode,
+                "trigger_cast": False,
+                "characters": session.characters,
+                "dna_status": dna_update_msg,
             },
             status_code=502,
         )
@@ -575,25 +732,36 @@ async def upload_dna(
         print(f"🧬 Extracting DNA for session: {session.session_id}")
         
         dna_string = await extract_visual_dna(image_bytes)
+        reference_image_path = save_reference_image(
+            session.session_id,
+            image_bytes,
+            getattr(file, "filename", None),
+            getattr(file, "content_type", None),
+        )
         
         resolved_target = target_name or await identify_character_from_text(user_caption, session)
 
         if resolved_target and resolved_target in session.characters:
             session.characters[resolved_target]["dna"] = dna_string
+            session.characters[resolved_target]["reference_image_path"] = reference_image_path
             message = f"Visual DNA locked for {resolved_target}."
         elif resolved_target and resolved_target in session.temp_characters:
             session.temp_characters[resolved_target]["dna"] = dna_string
+            session.temp_characters[resolved_target]["reference_image_path"] = reference_image_path
             message = f"Visual DNA locked for temporary character {resolved_target}."
-        else:
+        elif is_user_identity_claim(user_caption):
             session.visual_dna = dna_string
-            message = "Visual DNA locked to Lead User."
+            session.visual_dna_image_path = reference_image_path
+            message = "Visual DNA locked to your profile."
+        else:
+            message = "Photo context received."
         session.save()
         
         return JSONResponse({
             "status": "success",
             "dna": dna_string,
             "session_id": session.session_id,
-            "target": resolved_target or "Lead User",
+            "target": resolved_target or ("Lead User" if is_user_identity_claim(user_caption) else None),
             "caption": user_caption,
             "message": message
         })

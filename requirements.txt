@@ -8,3 +8,6 @@ SpeechRecognition
 pydantic
 edge-tts
 aiohttp
+Pillow
+replicate
+huggingface_hub

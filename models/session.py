@@ -18,6 +18,7 @@ class Session:
         temp_characters: Dict = None,
         visual_dna: str = "",
         location_context: str = "",
+        visual_dna_image_path: str = "",
     ):
         self.session_id = session_id or str(uuid.uuid4())
         self.mode = mode
@@ -25,6 +26,7 @@ class Session:
         self.story_lore = story_lore or ""
         self.visual_dna = visual_dna or ""
         self.location_context = location_context or ""
+        self.visual_dna_image_path = visual_dna_image_path or ""
         self.characters = self._normalize_characters(characters)
         self.temp_characters = self._normalize_characters(
             temp_characters,
@@ -42,6 +44,7 @@ class Session:
             entry.setdefault("traits", [])
             entry.setdefault("vibe", "unknown")
             entry.setdefault("dna", "")
+            entry.setdefault("reference_image_path", "")
             if include_description:
                 entry.setdefault("description", "")
             else:
@@ -99,6 +102,7 @@ class Session:
                 "vibe": "unknown",
                 "voice_mapping": None,
                 "dna": "",
+                "reference_image_path": "",
             }
 
         if traits:
@@ -117,6 +121,7 @@ class Session:
                 "vibe": "unknown",
                 "voice_mapping": None,
                 "dna": "",
+                "reference_image_path": "",
             }
 
         self.characters[name]["voice_mapping"] = voice_mapping
@@ -138,6 +143,7 @@ class Session:
                 "traits": traits or [],
                 "vibe": vibe,
                 "dna": "",
+                "reference_image_path": "",
             }
 
     def promote_character(self, name: str):
@@ -153,6 +159,7 @@ class Session:
                 vibe=temp.get("vibe", "unknown"),
             )
             self.characters[name]["dna"] = temp.get("dna", "")
+            self.characters[name]["reference_image_path"] = temp.get("reference_image_path", "")
 
             del self.temp_characters[name]
 
@@ -172,6 +179,7 @@ class Session:
             "temp_characters": self.temp_characters,
             "visual_dna": self.visual_dna,
             "location_context": self.location_context,
+            "visual_dna_image_path": self.visual_dna_image_path,
         }
 
         with open(filepath, "w", encoding="utf-8") as f:
@@ -198,6 +206,7 @@ class Session:
                     temp_characters=data.get("temp_characters", {}),
                     visual_dna=data.get("visual_dna", ""),
                     location_context=data.get("location_context", ""),
+                    visual_dna_image_path=data.get("visual_dna_image_path", ""),
                 )
 
             except Exception as e:
