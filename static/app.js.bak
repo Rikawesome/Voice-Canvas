@@ -67,21 +67,6 @@ const BUBBLE_STYLE_CYCLE = ['speech', 'thought', 'shout', 'caption', 'sfx'];
 const PROJECT_STORAGE_KEY = 'voicecanvas_project_v2';
 
 let projectState = { messages: [] };
-let lastRenderedMessageCount = 0; // Track how many messages are currently rendered in the DOM
-
-// =========================
-// UTILITY FUNCTIONS
-// =========================
-function debounce(func, delay) {
-    let timeout;
-    function debounced(...args) {
-        const context = this;
-        clearTimeout(timeout);
-        timeout = setTimeout(() => func.apply(context, args), delay);
-    }
-    debounced.cancel = () => clearTimeout(timeout); // Add cancel method
-    return debounced;
-}
 
 // =========================
 // MANGA-STYLE PLACEHOLDER GENERATOR (FIXED)
@@ -401,32 +386,20 @@ function saveProjectState() {
 }
 
 function renderProjectState() {
-    const totalMessagesInState = projectState.messages.length;
-
-    // If the DOM messages count is less than our tracking, it means it was cleared externally (e.g., resetSession)
-    // or manually truncated. Reset our tracking.
-    if (messagesDiv.children.length < lastRenderedMessageCount) {
-        lastRenderedMessageCount = 0;
-    }
-
-    // Only append new messages that haven't been rendered yet
-    for (let i = lastRenderedMessageCount; i < totalMessagesInState; i++) {
-        const entry = projectState.messages[i];
+    messagesDiv.innerHTML = '';
+    projectState.messages.forEach((entry, index) => {
         let node = null;
         if (entry.kind === 'text') {
             node = document.createElement('div');
             node.className = `message ${entry.role}`;
             node.innerText = entry.text;
         } else if (entry.kind === 'manga-page') {
-            node = renderMangaPage(entry.page, i);
+            node = renderMangaPage(entry.page, index);
         } else if (entry.kind === 'panel-gallery') {
-            node = renderMangaPanels(entry.panels, i);
+            node = renderMangaPanels(entry.panels, index);
         }
         if (node) messagesDiv.appendChild(node);
-    }
-
-    lastRenderedMessageCount = totalMessagesInState; // Update the count of rendered messages
-
+    });
     hydrateSavedMediaCards();
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
@@ -529,7 +502,6 @@ function resetSession() {
     localStorage.removeItem(PROJECT_STORAGE_KEY);
     projectState = { messages: [] };
     messagesDiv.innerHTML = '';
-    lastRenderedMessageCount = 0; // Reset this when DOM is explicitly cleared
     appendMessage('assistant', 'Session reset successfully.');
 }
 
@@ -626,36 +598,8 @@ if (lightbox) lightbox.addEventListener('touchend', (e) => { const diff = e.chan
 
 messagesDiv.addEventListener('focusin', (event) => { const bubble = event.target.closest('.speech-bubble'); if (bubble) bubble.classList.add('editing'); });
 messagesDiv.addEventListener('focusout', (event) => { const bubble = event.target.closest('.speech-bubble'); if (bubble) setTimeout(() => { if (!bubble.contains(document.activeElement)) bubble.classList.remove('editing'); }, 0); });
-
-// Debounced function for saving bubble edits
-const debouncedSaveBubbleEdit = debounce((bubbleNode) => {
-    syncBubbleNodeToState(bubbleNode);
-    saveProjectState();
-}, 300); // Debounce by 300ms
-
-// Use the debounced function for 'input' events on speech bubbles
-messagesDiv.addEventListener('input', (event) => {
-    const bubble = event.target.closest('.speech-bubble');
-    if (bubble) {
-        debouncedSaveBubbleEdit(bubble);
-    }
-});
-
-messagesDiv.addEventListener('keydown', (event) => {
-    if (!event.target.closest('.bubble-text')) return;
-    if (event.key === 'Enter') {
-        event.preventDefault();
-        event.target.blur();
-        const bubble = event.target.closest('.speech-bubble');
-        if (bubble) {
-            // Force immediate save when 'Enter' is pressed to commit changes
-            // and prevent loss of data if user closes tab immediately after Enter
-            syncBubbleNodeToState(bubble);
-            saveProjectState();
-            debouncedSaveBubbleEdit.cancel(); // Clear any pending debounced calls for this bubble
-        }
-    }
-});
+messagesDiv.addEventListener('input', (event) => { const bubble = event.target.closest('.speech-bubble'); if (bubble) { syncBubbleNodeToState(bubble); saveProjectState(); } });
+messagesDiv.addEventListener('keydown', (event) => { if (!event.target.closest('.bubble-text')) return; if (event.key === 'Enter') { event.preventDefault(); event.target.blur(); const bubble = event.target.closest('.speech-bubble'); if (bubble) { syncBubbleNodeToState(bubble); saveProjectState(); } } });
 
 messagesDiv.addEventListener('pointerdown', (event) => {
     const bubble = event.target.closest('.speech-bubble');
