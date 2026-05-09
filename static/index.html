@@ -1,1092 +1,942 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VoiceCanvas | Bring Ideas to Life</title>
-
-    <style>
-        :root {
-            --bg-ink: #08111f;
-            --bg-deep: #0f1d33;
-            --bg-card: rgba(15, 28, 52, 0.8);
-            --bg-card-strong: rgba(21, 38, 66, 0.94);
-            --bg-soft: rgba(255, 255, 255, 0.05);
-            --line: rgba(158, 193, 255, 0.16);
-            --line-strong: rgba(158, 193, 255, 0.28);
-            --text-main: #eef4ff;
-            --text-soft: #a3b4d1;
-            --text-dim: #7f92b0;
-            --brand-coral: #ff7a59;
-            --brand-gold: #ffcb6b;
-            --brand-cyan: #62e0ff;
-            --brand-mint: #67f0c2;
-            --brand-violet: #8d7dff;
-            --user-bubble: linear-gradient(135deg, #ff7a59 0%, #ffb15f 100%);
-            --assistant-bubble: linear-gradient(180deg, rgba(20, 35, 63, 0.98) 0%, rgba(15, 28, 52, 0.94) 100%);
-            --shadow-xl: 0 24px 80px rgba(0, 0, 0, 0.34);
-            --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.22);
-            --radius-xl: 28px;
-            --radius-lg: 22px;
-            --radius-md: 16px;
-        }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        html, body {
-            height: 100%;
-        }
-
-        body {
-            background:
-                radial-gradient(circle at 12% 18%, rgba(255, 122, 89, 0.24), transparent 22%),
-                radial-gradient(circle at 82% 8%, rgba(98, 224, 255, 0.18), transparent 24%),
-                radial-gradient(circle at 70% 72%, rgba(141, 125, 255, 0.16), transparent 18%),
-                linear-gradient(180deg, var(--bg-deep) 0%, var(--bg-ink) 42%, #070d18 100%);
-            color: var(--text-main);
-            font-family: "Aptos", "Segoe UI", "Trebuchet MS", sans-serif;
-            overflow: hidden;
-        }
-
-        body::before {
-            content: "";
-            position: fixed;
-            inset: 0;
-            background-image:
-                linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-            background-size: 36px 36px;
-            mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.5), transparent 90%);
-            pointer-events: none;
-        }
-
-        .app-shell {
-            width: min(1120px, calc(100vw - 24px));
-            height: calc(100dvh - 24px);
-            margin: 12px auto;
-            border: 1px solid var(--line);
-            border-radius: 32px;
-            background: rgba(7, 14, 26, 0.74);
-            backdrop-filter: blur(18px);
-            box-shadow: var(--shadow-xl);
-            display: grid;
-            grid-template-columns: 320px minmax(0, 1fr);
-            overflow: hidden;
-            position: relative;
-        }
-
-        .mobile-topbar {
-            display: none;
-        }
-
-        .mobile-mode-row {
-            display: none;
-        }
-
-        .side-rail {
-            padding: 24px 20px 20px;
-            border-right: 1px solid var(--line);
-            background:
-                linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 22%),
-                rgba(8, 17, 31, 0.82);
-            display: flex;
-            flex-direction: column;
-            gap: 18px;
-            min-height: 0;
-            overflow-y: auto;
-        }
-
-        .brand-lockup {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .brand-kicker {
-            font-size: 0.72rem;
-            letter-spacing: 0.22em;
-            text-transform: uppercase;
-            color: var(--brand-gold);
-        }
-
-        .logo {
-            font-size: 2rem;
-            font-weight: 800;
-            letter-spacing: -0.04em;
-        }
-
-        .brand-copy {
-            color: var(--text-soft);
-            line-height: 1.45;
-            font-size: 0.95rem;
-        }
-
-        .spotlight-card,
-        .mode-card,
-        .composer-card {
-            border: 1px solid var(--line);
-            border-radius: var(--radius-lg);
-            background: rgba(18, 31, 56, 0.96);
-            box-shadow: var(--shadow-lg);
-        }
-
-        .spotlight-card {
-            padding: 18px;
-            overflow: hidden;
-            position: relative;
-        }
-
-        .spotlight-card::before {
-            content: "";
-            position: absolute;
-            inset: auto -20% 32% auto;
-            width: 160px;
-            height: 160px;
-            background: radial-gradient(circle, rgba(98, 224, 255, 0.28), transparent 72%);
-            filter: blur(4px);
-        }
-
-        .spotlight-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 7px 12px;
-            border-radius: 999px;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            color: var(--brand-cyan);
-            font-size: 0.78rem;
-        }
-
-        .spotlight-title {
-            margin-top: 14px;
-            font-size: 1.24rem;
-            line-height: 1.15;
-            max-width: 12ch;
-        }
-
-        .spotlight-copy {
-            margin-top: 10px;
-            color: var(--text-soft);
-            line-height: 1.5;
-            font-size: 0.9rem;
-            max-width: 30ch;
-        }
-
-        .mode-card {
-            padding: 16px;
-        }
-
-        .section-label {
-            font-size: 0.78rem;
-            letter-spacing: 0.16em;
-            text-transform: uppercase;
-            color: var(--text-dim);
-            margin-bottom: 12px;
-        }
-
-        .mode-row {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .mode-btn {
-            width: 100%;
-            text-align: left;
-            border: 1px solid var(--line);
-            background: rgba(255, 255, 255, 0.02);
-            color: var(--text-main);
-            padding: 14px 16px;
-            border-radius: 16px;
-            font-size: 0.95rem;
-            cursor: pointer;
-            transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
-        }
-
-        .mode-btn:hover {
-            transform: translateY(-1px);
-            border-color: var(--line-strong);
-            background: rgba(255, 255, 255, 0.05);
-        }
-
-        .mode-btn.active {
-            background: linear-gradient(135deg, rgba(255, 122, 89, 0.22), rgba(141, 125, 255, 0.18));
-            border-color: rgba(255, 203, 107, 0.34);
-            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
-            font-weight: 700;
-        }
-
-        .mode-help {
-            margin-top: 12px;
-            font-size: 0.84rem;
-            line-height: 1.5;
-            color: var(--text-soft);
-        }
-
-        .status-stack {
-            margin-top: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        #mode-indicator {
-            align-self: flex-start;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 14px;
-            border-radius: 999px;
-            background: linear-gradient(135deg, rgba(255, 203, 107, 0.2), rgba(255, 122, 89, 0.22));
-            border: 1px solid rgba(255, 203, 107, 0.32);
-            color: var(--brand-gold);
-            font-size: 0.78rem;
-            font-weight: 800;
-            letter-spacing: 0.1em;
-        }
-
-        .control-row {
-            display: flex;
-            gap: 10px;
-        }
-
-        .ghost-btn {
-            flex: 1;
-            border: 1px solid var(--line);
-            background: rgba(255, 255, 255, 0.03);
-            color: var(--text-soft);
-            border-radius: 14px;
-            padding: 10px 12px;
-            cursor: pointer;
-            transition: background 0.18s ease, border-color 0.18s ease;
-        }
-
-        .ghost-btn:hover {
-            background: rgba(255, 255, 255, 0.06);
-            border-color: var(--line-strong);
-        }
-
-        .workspace {
-            min-width: 0;
-            display: grid;
-            grid-template-rows: auto minmax(0, 1fr) auto;
-            min-height: 0;
-        }
-
-        .workspace-header {
-            padding: 22px 24px 16px;
-            border-bottom: 1px solid var(--line);
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 16px;
-            background: linear-gradient(180deg, rgba(14, 25, 47, 0.96), rgba(11, 20, 38, 0.88));
-        }
-
-        .workspace-title {
-            font-size: 1.4rem;
-            font-weight: 780;
-            letter-spacing: -0.03em;
-        }
-
-        .workspace-copy {
-            margin-top: 6px;
-            color: var(--text-soft);
-            font-size: 0.92rem;
-            line-height: 1.55;
-            max-width: 56ch;
-        }
-
-        .header-pills {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            justify-content: flex-end;
-        }
-
-        .header-pill {
-            padding: 8px 12px;
-            border-radius: 999px;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            color: var(--text-soft);
-            font-size: 0.78rem;
-        }
-
-        #messages {
-            min-height: 0;
-            overflow-y: auto;
-            padding: 18px 24px 24px;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-            scroll-behavior: smooth;
-            -webkit-overflow-scrolling: touch;
-            overscroll-behavior-y: contain;
-            touch-action: pan-y;
-        }
-
-        .message {
-            max-width: min(82%, 720px);
-            padding: 14px 16px;
-            border-radius: 22px;
-            line-height: 1.55;
-            white-space: pre-wrap;
-            box-shadow: var(--shadow-lg);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        .user {
-            align-self: flex-end;
-            background: var(--user-bubble);
-            color: #20130c;
-            border-bottom-right-radius: 8px;
-            font-weight: 600;
-        }
-
-        .assistant {
-            align-self: flex-start;
-            background: linear-gradient(180deg, rgba(23, 40, 71, 0.99) 0%, rgba(16, 29, 52, 0.98) 100%);
-            border-color: rgba(158, 193, 255, 0.12);
-            border-bottom-left-radius: 8px;
-        }
-
-        .system {
-            align-self: center;
-            background: rgba(13, 26, 48, 0.98);
-            color: var(--text-soft);
-            border: 1px solid rgba(103, 240, 194, 0.16);
-            font-size: 0.82rem;
-            max-width: 100%;
-            padding: 10px 14px;
-            box-shadow: none;
-        }
-
-        .scene-actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 12px;
-            flex-wrap: wrap;
-        }
-
-        .manga-page-card {
-            width: min(100%, 960px);
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            padding: 10px;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(158, 193, 255, 0.16);
-            border-radius: 22px;
-            margin: 0 auto;
-        }
-
-        .manga-page-card img {
-            width: 100%;
-            height: auto;
-            border-radius: 16px;
-            display: block;
-            background: rgba(8, 17, 31, 0.7);
-        }
-
-        .manga-page-title {
-            font-size: 12px;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            color: var(--text-soft);
-        }
-
-        .scene-action-btn {
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            background: rgba(255, 255, 255, 0.04);
-            color: var(--text-main);
-            padding: 10px 12px;
-            border-radius: 14px;
-            font-size: 0.82rem;
-            cursor: pointer;
-        }
-
-        .panel-gallery {
-            align-self: center;
-            width: min(100%, 760px);
-            display: flex;
-            flex-direction: column;
-            gap: 18px;
-            margin: 10px auto 6px;
-        }
-
-        .panel-card {
-            width: 100%;
-            max-width: 600px;
-            margin: 0 auto;
-            background: linear-gradient(180deg, rgba(13, 22, 40, 0.96), rgba(8, 16, 29, 0.98));
-            border: 1px solid rgba(158, 193, 255, 0.14);
-            border-radius: 26px;
-            padding: 14px;
-            box-shadow: 0 26px 56px rgba(0, 0, 0, 0.24);
-        }
-
-        .panel-frame {
-            position: relative;
-            overflow: hidden;
-            border-radius: 20px;
-            background:
-                linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01)),
-                #0a1220;
-            min-height: 280px;
-        }
-
-        .panel-frame img {
-            width: 100%;
-            height: auto;
-            display: block;
-            object-fit: contain;
-            image-rendering: auto;
-            aspect-ratio: 4 / 5;
-            background: #000;
-        }
-
-        .panel-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-            margin-top: 12px;
-        }
-
-        .panel-index {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 12px;
-            border-radius: 999px;
-            background: rgba(255, 255, 255, 0.04);
-            color: var(--brand-gold);
-            font-size: 0.78rem;
-            font-weight: 800;
-            letter-spacing: 0.08em;
-        }
-
-        .panel-speaker {
-            color: var(--brand-mint);
-            font-size: 0.82rem;
-            font-weight: 600;
-            background: rgba(0, 0, 0, 0.3);
-            padding: 2px 8px;
-            border-radius: 4px;
-        }
-
-        .panel-empty {
-            min-height: 280px;
-            display: grid;
-            place-items: center;
-            color: var(--text-dim);
-            font-size: 0.92rem;
-        }
-
-        .input-area {
-            padding: 16px 24px 22px;
-            border-top: 1px solid var(--line);
-            background:
-                linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 30%),
-                rgba(8, 14, 26, 0.84);
-            backdrop-filter: blur(18px);
-            position: sticky;
-            bottom: 0;
-            z-index: 5;
-        }
-
-        .live-status {
-            display: none;
-            margin-bottom: 12px;
-            padding: 12px 14px;
-            border-radius: 16px;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 122, 89, 0.22);
-            color: var(--text-soft);
-            font-size: 0.88rem;
-        }
-
-        .live-status.active {
-            display: block;
-        }
-
-        .composer-shell {
-            border: 1px solid var(--line);
-            border-radius: var(--radius-xl);
-            background: rgba(11, 19, 35, 0.88);
-            box-shadow: var(--shadow-lg);
-            padding: 12px;
-        }
-
-        .attachment-chip {
-            display: none;
-            align-items: center;
-            gap: 14px;
-            padding: 12px;
-            border-radius: 18px;
-            background: linear-gradient(135deg, rgba(103, 240, 194, 0.12), rgba(98, 224, 255, 0.08));
-            border: 1px solid rgba(103, 240, 194, 0.22);
-            margin-bottom: 12px;
-        }
-
-        .attachment-chip.visible {
-            display: flex;
-        }
-
-        .attachment-thumb {
-            width: 56px;
-            height: 56px;
-            object-fit: cover;
-            border-radius: 16px;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            background: #0d181d;
-        }
-
-        .attachment-copy {
-            flex: 1;
-            min-width: 0;
-        }
-
-        .attachment-title {
-            font-size: 0.92rem;
-            font-weight: 700;
-        }
-
-        .attachment-subtitle {
-            font-size: 0.78rem;
-            color: var(--text-soft);
-            margin-top: 4px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .attachment-remove {
-            border: none;
-            background: rgba(255, 255, 255, 0.06);
-            color: var(--text-soft);
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            cursor: pointer;
-            font-size: 1rem;
-        }
-
-        .input-row {
-            display: grid;
-            grid-template-columns: auto auto minmax(0, 1fr) auto auto;
-            gap: 10px;
-            align-items: end;
-        }
-
-        .attach-btn,
-        .action-btn {
-            width: 48px;
-            height: 48px;
-            border-radius: 18px;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            transition: transform 0.18s ease, filter 0.18s ease;
-        }
-
-        .attach-btn:hover,
-        .action-btn:hover,
-        .attachment-remove:hover {
-            transform: translateY(-1px);
-            filter: brightness(1.06);
-        }
-
-        .attach-btn {
-            border: 1px solid var(--line);
-            background: rgba(255, 255, 255, 0.04);
-            color: var(--text-main);
-            font-size: 1.05rem;
-        }
-
-        .text-stack {
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 20px;
-            min-height: 48px;
-            display: flex;
-            align-items: center;
-            padding: 10px 14px;
-        }
-
-        #user-input {
-            width: 100%;
-            border: none;
-            background: transparent;
-            color: var(--text-main);
-            outline: none;
-            font-size: 15px;
-            line-height: 1.4;
-        }
-
-        #user-input::placeholder {
-            color: var(--text-dim);
-        }
-
-        .action-btn {
-            border: none;
-            background: linear-gradient(135deg, var(--brand-coral), var(--brand-gold));
-            color: #25150d;
-            font-weight: 800;
-        }
-
-        #mic-btn.active-live {
-            background: linear-gradient(135deg, #ff5f78, #ff9364);
-            color: white;
-            animation: pulse 1.45s infinite;
-        }
-
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.08); }
-            100% { transform: scale(1); }
-        }
-
-        .composer-hint {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            padding: 10px 4px 0;
-            color: var(--text-soft);
-            font-size: 0.8rem;
-        }
-
-        .composer-hint span:last-child {
-            color: var(--brand-cyan);
-        }
-
-        #casting-modal {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(4, 10, 20, 0.98);
-            backdrop-filter: blur(12px);
-            z-index: 2000;
-            justify-content: center;
-            align-items: flex-start;
-            padding: 20px;
-            overflow-y: auto;
-        }
-
-        .modal-card {
-            width: min(480px, 100%);
-            border-radius: 28px;
-            padding: 22px;
-            border: 1px solid var(--line);
-            background: linear-gradient(180deg, rgba(17, 28, 50, 0.98), rgba(10, 18, 32, 0.98));
-            box-shadow: var(--shadow-xl);
-            max-height: calc(100dvh - 40px);
-            margin: auto 0;
-            overflow-y: auto;
-            overscroll-behavior: contain;
-        }
-
-        .casting-list {
-            margin-top: 16px;
-            max-height: min(46dvh, 420px);
-            overflow-y: auto;
-            padding-right: 4px;
-        }
-
-        .casting-actions {
-            position: sticky;
-            bottom: 0;
-            margin-top: 12px;
-            padding-top: 12px;
-            background: linear-gradient(180deg, rgba(17, 28, 50, 0), rgba(10, 18, 32, 0.96) 24%);
-        }
-
-        .char-card {
-            background: rgba(255, 255, 255, 0.04);
-            padding: 14px;
-            border-radius: 18px;
-            margin-bottom: 10px;
-            border: 1px solid rgba(255, 255, 255, 0.06);
-        }
-
-        .char-name {
-            color: var(--brand-cyan);
-            font-weight: 700;
-        }
-
-        .char-vibe {
-            font-size: 12px;
-            color: var(--text-soft);
-        }
-
-        .voice-select {
-            width: 100%;
-            margin-top: 10px;
-            padding: 12px;
-            border-radius: 14px;
-            background: rgba(3, 10, 21, 0.86);
-            color: white;
-            border: 1px solid var(--line);
-        }
-
-        button {
-            user-select: none;
-        }
-
-        /* Responsive Mobile UI Fixes */
-        @media (max-width: 960px) {
-            body {
-                overflow: auto;
-            }
-
-            .app-shell {
-                grid-template-columns: 1fr;
-                width: 100vw;
-                height: 100dvh;
-                margin: 0;
-                border-radius: 0;
-                border: none;
-                position: relative;
-            }
-
-            .side-rail {
-                display: none;
-            }
-
-            .mobile-topbar {
-                display: flex !important;
-                align-items: center;
-                justify-content: space-between;
-                gap: 12px;
-                padding: 12px 16px 10px;
-                border-bottom: 1px solid var(--line);
-                background: #08111f !important; /* Fixed: Solid background */
-                opacity: 1 !important;
-                backdrop-filter: blur(14px);
-                position: sticky;
-                top: 0;
-                z-index: 900;
-            }
-
-            .mobile-brand {
-                min-width: 0;
-            }
-
-            .mobile-kicker {
-                font-size: 0.68rem;
-                text-transform: uppercase;
-                letter-spacing: 0.18em;
-                color: var(--brand-gold);
-            }
-
-            .mobile-title {
-                font-size: 1.08rem;
-                font-weight: 760;
-                margin-top: 3px;
-            }
-
-            .mobile-topbar-actions {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-            }
-
-            .mobile-topbar-btn {
-                min-width: 44px;
-                height: 44px;
-                padding: 0 12px;
-                border-radius: 14px;
-                border: 1px solid var(--line);
-                background: rgba(255, 255, 255, 0.04);
-                color: var(--text-main);
-                font-size: 0.78rem;
-                font-weight: 700;
-                cursor: pointer;
-            }
-
-            .mobile-mode-row {
-                display: flex !important;
-                gap: 8px;
-                overflow-x: auto;
-                padding: 10px 16px 12px;
-                background: #08111f !important; /* Fixed: Solid background */
-                opacity: 1 !important;
-                border-bottom: 1px solid var(--line);
-                scrollbar-width: none;
-                position: sticky;
-                top: 67px;
-                z-index: 850;
-                box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
-            }
-
-            .mobile-mode-row::-webkit-scrollbar {
-                display: none;
-            }
-
-            .mobile-mode-btn {
-                white-space: nowrap;
-                border: 1px solid var(--line);
-                background: rgba(255, 255, 255, 0.04);
-                color: var(--text-main);
-                border-radius: 999px;
-                padding: 10px 14px;
-                font-size: 0.8rem;
-                cursor: pointer;
-            }
-
-        .mobile-mode-btn.active {
-            background: linear-gradient(135deg, rgba(255, 122, 89, 0.22), rgba(141, 125, 255, 0.18));
-            border-color: rgba(255, 203, 107, 0.34);
-            font-weight: 700;
-        }
-
-        .composer-mode-row {
-            display: none;
-            gap: 8px;
-            margin-bottom: 12px;
-            overflow-x: auto;
-            scrollbar-width: none;
-        }
-
-        .composer-mode-row::-webkit-scrollbar {
-            display: none;
-        }
-
-        .composer-mode-btn {
-            white-space: nowrap;
-            border: 1px solid var(--line);
-            background: rgba(255, 255, 255, 0.04);
-            color: var(--text-main);
-            border-radius: 999px;
-            padding: 10px 14px;
-            font-size: 0.8rem;
-            cursor: pointer;
-        }
-
-        .composer-mode-btn.active {
-            background: linear-gradient(135deg, rgba(255, 122, 89, 0.22), rgba(141, 125, 255, 0.18));
-            border-color: rgba(255, 203, 107, 0.34);
-            font-weight: 700;
-        }
-
-            .workspace-header,
-            #messages,
-            .input-area {
-                padding-left: 16px;
-                padding-right: 16px;
-            }
-
-            .workspace-header {
-                display: none;
-            }
-
-            .composer-mode-row {
-                display: flex !important;
-            }
-
-            .message {
-                max-width: 92%;
-            }
-
-            .workspace {
-                height: 100dvh;
-            }
-        }
-
-        @media (max-width: 640px) {
-            .workspace-header {
-                padding-top: 16px;
-            }
-
-            #messages {
-                padding-top: 14px;
-                padding-bottom: 120px;
-                gap: 14px;
-            }
-
-            .input-area {
-                padding: 12px 14px calc(14px + env(safe-area-inset-bottom));
-            }
-
-            .workspace-header {
-                flex-direction: column;
-            }
-
-            .header-pills {
-                justify-content: flex-start;
-            }
-
-            .panel-gallery {
-                width: 100%;
-            }
-
-            .panel-card {
-                padding: 10px;
-                border-radius: 22px;
-            }
-
-            .panel-frame img,
-            .panel-empty {
-                min-height: 220px;
-                aspect-ratio: 9 / 13;
-            }
-
-            .input-row {
-                grid-template-columns: auto auto minmax(0, 1fr) auto;
-            }
-
-            #mic-btn {
-                grid-column: 4;
-            }
-
-            #send-btn {
-                grid-column: 4;
-            }
-        }
-    </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>VoiceCanvas | Manga Studio</title>
+<style>
+
+:root{
+    --bg:#080b14;
+    --bg2:#0d1324;
+    --panel:rgba(18,25,44,.92);
+    --panel2:rgba(24,34,58,.94);
+    --glass:rgba(255,255,255,.05);
+    --line:rgba(170,194,255,.15);
+    --text:#f3f7ff;
+    --muted:#9aa9c5;
+    --cyan:#65e4ff;
+    --gold:#ffd166;
+    --coral:#ff7a59;
+    --mint:#6df2c2;
+    --radius:24px;
+}
+
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+}
+
+html,body{
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    font-family:Inter,system-ui,sans-serif;
+    background: radial-gradient(circle at top left, rgba(255,122,89,.15), transparent 25%),
+                radial-gradient(circle at top right, rgba(101,228,255,.12), transparent 25%),
+                linear-gradient(180deg, #10182d 0%, #070b14 60%, #05070d 100%);
+    color:var(--text);
+}
+
+.app-shell{
+    width:100%;
+    height:100dvh;
+    display:grid;
+    grid-template-columns:320px 1fr;
+    overflow:hidden;
+}
+
+/* =========================
+SIDEBAR
+========================= */
+
+.side-rail{
+    background:rgba(7,11,20,.96);
+    border-right:1px solid var(--line);
+    padding:24px 18px;
+    overflow-y:auto;
+    display:flex;
+    flex-direction:column;
+    gap:20px;
+}
+
+.logo-kicker{
+    color:var(--gold);
+    letter-spacing:.18em;
+    text-transform:uppercase;
+    font-size:.72rem;
+    font-weight:800;
+}
+
+.logo{
+    margin-top:4px;
+    font-size:2rem;
+    font-weight:900;
+    letter-spacing:-.05em;
+}
+
+.logo-sub{
+    margin-top:10px;
+    line-height:1.55;
+    color:var(--muted);
+    font-size:.92rem;
+}
+
+.sidebar-card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:16px;
+}
+
+.sidebar-label{
+    color:var(--muted);
+    font-size:.72rem;
+    text-transform:uppercase;
+    letter-spacing:.14em;
+    margin-bottom:12px;
+    font-weight:800;
+}
+
+.mode-btn{
+    width:100%;
+    padding:14px;
+    margin-bottom:10px;
+    border:none;
+    border-radius:16px;
+    cursor:pointer;
+    background:rgba(255,255,255,.05);
+    color:var(--text);
+    font-weight:700;
+    text-align:left;
+    transition:.18s;
+}
+
+.mode-btn:hover{
+    transform:translateY(-1px);
+    background:rgba(255,255,255,.08);
+}
+
+.mode-btn.active{
+    background:linear-gradient(135deg, rgba(255,122,89,.28), rgba(101,228,255,.18));
+    border:1px solid rgba(255,255,255,.08);
+}
+
+#mode-indicator{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    padding:8px 12px;
+    border-radius:999px;
+    background:rgba(255,209,102,.12);
+    color:var(--gold);
+    border:1px solid rgba(255,209,102,.18);
+    font-size:.75rem;
+    font-weight:800;
+    letter-spacing:.12em;
+}
+
+.sidebar-action{
+    width:100%;
+    margin-top:12px;
+    padding:12px;
+    border:none;
+    border-radius:16px;
+    cursor:pointer;
+    color:var(--text);
+    background:rgba(255,255,255,.06);
+    font-weight:700;
+}
+
+/* =========================
+MAIN
+========================= */
+
+.workspace{
+    display:grid;
+    grid-template-rows:auto auto 1fr auto;
+    min-width:0;
+    min-height:0;
+}
+
+.workspace-header{
+    padding:22px 24px 16px;
+    border-bottom:1px solid var(--line);
+    background:rgba(7,11,20,.94);
+    backdrop-filter:blur(16px);
+}
+
+.workspace-title{
+    font-size:1.5rem;
+    font-weight:900;
+    letter-spacing:-.04em;
+}
+
+.workspace-sub{
+    margin-top:6px;
+    color:var(--muted);
+    line-height:1.55;
+    font-size:.92rem;
+}
+
+/* =========================
+MOBILE
+========================= */
+
+.mobile-topbar{
+    display:none;
+    align-items:center;
+    gap:10px;
+    padding:10px 12px;
+    border-bottom:1px solid var(--line);
+    background:rgba(7,11,20,.96);
+}
+
+.mobile-menu-btn{
+    width:42px;
+    height:42px;
+    border:none;
+    border-radius:14px;
+    background:rgba(255,255,255,.06);
+    color:white;
+    cursor:pointer;
+    font-size:1.1rem;
+}
+
+.mobile-brand{
+    flex:1;
+}
+
+.mobile-kicker{
+    color:var(--gold);
+    letter-spacing:.16em;
+    text-transform:uppercase;
+    font-size:.62rem;
+    font-weight:800;
+}
+
+.mobile-title{
+    margin-top:2px;
+    font-size:1rem;
+    font-weight:900;
+}
+
+.mobile-topbar-btn{
+    padding:10px 12px;
+    border:none;
+    border-radius:12px;
+    background:rgba(255,255,255,.06);
+    color:white;
+    cursor:pointer;
+    font-size:.72rem;
+    font-weight:700;
+}
+
+.mobile-mode-row{
+    display:none;
+    gap:8px;
+    overflow-x:auto;
+    padding:10px 12px;
+    background:rgba(7,11,20,.96);
+    border-bottom:1px solid var(--line);
+}
+
+.mobile-mode-btn{
+    white-space:nowrap;
+    padding:10px 14px;
+    border:none;
+    border-radius:999px;
+    background:rgba(255,255,255,.05);
+    color:white;
+    cursor:pointer;
+    font-size:.78rem;
+    font-weight:700;
+}
+
+.mobile-mode-btn.active{
+    background:linear-gradient(135deg, rgba(255,122,89,.28), rgba(101,228,255,.18));
+}
+
+/* =========================
+MESSAGES
+========================= */
+
+#messages{
+    overflow-y:auto;
+    padding:18px;
+    display:flex;
+    flex-direction:column;
+    gap:16px;
+    min-height:0;
+    scroll-behavior:smooth;
+}
+
+.message{
+    max-width:84%;
+    padding:14px 16px;
+    border-radius:22px;
+    line-height:1.55;
+    border:1px solid rgba(255,255,255,.06);
+    white-space:pre-wrap;
+}
+
+.user{
+    align-self:flex-end;
+    background:linear-gradient(135deg, var(--coral), var(--gold));
+    color:#25140d;
+    font-weight:700;
+    border-bottom-right-radius:8px;
+}
+
+.assistant{
+    align-self:flex-start;
+    background:linear-gradient(180deg, rgba(20,30,52,.96), rgba(10,16,30,.98));
+    border-bottom-left-radius:8px;
+}
+
+/* =========================
+MANGA PAGE & PANELS
+========================= */
+
+.manga-page-card{
+    width:min(100%,920px);
+    align-self:center;
+    padding:10px;
+    border-radius:28px;
+    background:linear-gradient(180deg, rgba(18,27,48,.98), rgba(8,14,26,.98));
+    border:1px solid rgba(255,255,255,.08);
+}
+
+.manga-page-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:10px;
+}
+
+.manga-page-title{
+    color:var(--gold);
+    text-transform:uppercase;
+    letter-spacing:.1em;
+    font-size:.75rem;
+    font-weight:900;
+}
+
+.manga-page-hint{
+    color:var(--muted);
+    font-size:.76rem;
+}
+
+.manga-page-preview{
+    width:100%;
+    background:black;
+    border-radius:20px;
+    overflow:hidden;
+    cursor:pointer;
+    position:relative;
+}
+
+.manga-page-preview img{
+    width:100%;
+    display:block;
+}
+
+.panel-gallery{
+    width:min(100%,920px);
+    align-self:center;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+}
+
+.panel-gallery-title{
+    display:flex;
+    justify-content:space-between;
+    color:var(--muted);
+    font-size:.82rem;
+}
+
+.panel-grid{
+    display:grid;
+    grid-template-columns:repeat(2,1fr);
+    gap:12px;
+}
+
+.panel-card{
+    width:100%;
+    border:none;
+    padding:10px;
+    border-radius:22px;
+    cursor:pointer;
+    background:linear-gradient(180deg, rgba(18,27,48,.96), rgba(8,14,26,.98));
+    border:1px solid rgba(255,255,255,.08);
+    color:white;
+}
+
+.panel-frame{
+    overflow:hidden;
+    border-radius:16px;
+    background:black;
+    position:relative;
+}
+
+.panel-frame img{
+    width:100%;
+    aspect-ratio:3/4;
+    object-fit:cover;
+    display:block;
+}
+
+/* =========================
+MANGA-ACCURATE SPEECH BUBBLES
+========================= */
+
+.bubble-layer{
+    position:absolute;
+    inset:0;
+    pointer-events:none;
+}
+
+.speech-bubble{
+    position:absolute;
+    min-width:80px;
+    max-width:38%;
+    pointer-events:auto;
+    cursor:move;
+    z-index:100;
+}
+
+/* Speech bubble shapes using SVG backgrounds */
+.speech-bubble[data-style="speech"]{
+    background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 120"><path d="M10,10 Q10,5 20,5 L180,5 Q190,5 190,15 L190,95 Q190,105 180,105 L80,105 L50,135 L55,105 L20,105 Q10,105 10,95 Z" fill="white" stroke="black" stroke-width="2.5"/></svg>');
+    background-repeat:no-repeat;
+    background-size:100% 100%;
+    background-color:transparent;
+    padding:18px 16px 16px 20px;
+    min-height:70px;
+}
+
+.speech-bubble[data-style="shout"]{
+    background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 120"><path d="M15,15 L30,5 L55,12 L85,5 L110,15 L140,8 L165,18 L185,35 L192,58 L185,85 L195,105 L175,115 L150,108 L120,118 L90,112 L60,118 L30,110 L10,95 L5,70 L8,45 Z" fill="white" stroke="black" stroke-width="2.5"/><path d="M100,25 L100,75 M85,55 L115,55" stroke="black" stroke-width="3"/></svg>');
+    background-repeat:no-repeat;
+    background-size:100% 100%;
+    padding:20px 20px 18px 20px;
+    min-height:70px;
+}
+
+.speech-bubble[data-style="thought"]{
+    background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><ellipse cx="100" cy="45" rx="88" ry="40" fill="white" stroke="black" stroke-width="2.5"/><circle cx="45" cy="78" r="8" fill="white" stroke="black" stroke-width="2"/><circle cx="30" cy="92" r="5" fill="white" stroke="black" stroke-width="1.5"/><circle cx="20" cy="98" r="3" fill="white" stroke="black" stroke-width="1.5"/></svg>');
+    background-repeat:no-repeat;
+    background-size:100% 100%;
+    padding:16px 20px 12px 20px;
+    min-height:60px;
+}
+
+.speech-bubble[data-style="caption"]{
+    background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 50"><rect x="5" y="5" width="290" height="40" rx="4" fill="%231a1a2e" stroke="black" stroke-width="2"/></svg>');
+    background-repeat:no-repeat;
+    background-size:100% 100%;
+    padding:10px 16px;
+    min-height:40px;
+}
+
+.speech-bubble[data-style="caption"] .bubble-text{
+    color:white;
+    font-family:"Arial Narrow","Franklin Gothic Medium",Arial,sans-serif;
+    font-size:.7rem;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+}
+
+.speech-bubble[data-style="sfx"]{
+    background:transparent;
+    text-shadow:2px 2px 0 #fff,4px 4px 0 #000;
+    font-family:Impact,"Arial Black",sans-serif;
+    font-size:1.4rem;
+    font-weight:900;
+    letter-spacing:.05em;
+    min-height:auto;
+    padding:8px;
+}
+
+/* Bubble text styling */
+.bubble-text{
+    font-family:"Comic Neue","Comic Sans MS","Segoe UI",Arial,sans-serif;
+    font-size:.85rem;
+    line-height:1.35;
+    text-align:center;
+    word-break:break-word;
+    color:#111;
+    font-weight:600;
+    position:relative;
+    z-index:2;
+}
+
+.speech-bubble[data-style="shout"] .bubble-text{
+    font-size:1rem;
+    font-weight:900;
+    text-transform:uppercase;
+    letter-spacing:.02em;
+}
+
+.speech-bubble[data-style="thought"] .bubble-text{
+    font-style:italic;
+    font-family:"Segoe UI","Comic Sans MS",Arial,sans-serif;
+}
+
+/* Bubble controls */
+.bubble-toolbar{
+    position:absolute;
+    top:-34px;
+    left:0;
+    display:none;
+    align-items:center;
+    gap:6px;
+    padding:4px 6px;
+    border-radius:999px;
+    background:rgba(8,11,18,.92);
+    border:1px solid rgba(255,255,255,.12);
+    box-shadow:0 10px 24px rgba(0,0,0,.28);
+}
+
+.speech-bubble.editing .bubble-toolbar,
+.speech-bubble.dragging .bubble-toolbar,
+.speech-bubble.move-ready .bubble-toolbar{
+    display:flex;
+}
+
+.bubble-tool{
+    border:none;
+    min-width:26px;
+    height:26px;
+    padding:0 8px;
+    border-radius:999px;
+    background:rgba(255,255,255,.08);
+    color:#f8fafc;
+    font-size:.68rem;
+    font-weight:800;
+    cursor:pointer;
+}
+
+.bubble-handle{
+    position:absolute;
+    right:-8px;
+    bottom:-8px;
+    width:18px;
+    height:18px;
+    border-radius:50%;
+    background:var(--cyan);
+    border:2px solid #08111c;
+    box-shadow:0 6px 18px rgba(0,0,0,.35);
+    cursor:nwse-resize;
+    display:none;
+}
+
+.speech-bubble.editing .bubble-handle,
+.speech-bubble.dragging .bubble-handle,
+.speech-bubble.move-ready .bubble-handle{
+    display:block;
+}
+
+.speech-bubble.move-ready{
+    outline:2px dashed rgba(101,228,255,.85);
+    outline-offset:2px;
+}
+
+.panel-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-top:10px;
+}
+
+.panel-index{
+    color:var(--gold);
+    font-size:.74rem;
+    font-weight:900;
+    text-transform:uppercase;
+    letter-spacing:.1em;
+}
+
+.panel-speaker{
+    background:rgba(255,255,255,.06);
+    padding:4px 8px;
+    border-radius:999px;
+    color:var(--mint);
+    font-size:.72rem;
+}
+
+/* =========================
+INPUT AREA
+========================= */
+
+.input-area{
+    padding:14px 18px 18px;
+    border-top:1px solid var(--line);
+    background:rgba(7,11,20,.94);
+    backdrop-filter:blur(16px);
+}
+
+.composer-mode-row{
+    display:flex;
+    gap:8px;
+    margin-bottom:10px;
+    overflow-x:auto;
+}
+
+.composer-mode-btn{
+    white-space:nowrap;
+    padding:9px 12px;
+    border:none;
+    border-radius:999px;
+    background:rgba(255,255,255,.05);
+    color:white;
+    cursor:pointer;
+    font-size:.76rem;
+    font-weight:700;
+}
+
+.composer-mode-btn.active{
+    background:linear-gradient(135deg, rgba(255,122,89,.28), rgba(101,228,255,.18));
+}
+
+.composer-shell{
+    padding:10px;
+    border-radius:24px;
+    background:rgba(12,19,34,.98);
+    border:1px solid var(--line);
+}
+
+.input-row{
+    display:grid;
+    grid-template-columns:auto auto 1fr auto;
+    gap:8px;
+    align-items:center;
+}
+
+.attach-btn,
+.action-btn{
+    width:46px;
+    height:46px;
+    border:none;
+    border-radius:16px;
+    cursor:pointer;
+    color:white;
+    font-size:1rem;
+}
+
+.attach-btn{
+    background:rgba(255,255,255,.06);
+}
+
+.action-btn{
+    background:linear-gradient(135deg, var(--coral), var(--gold));
+    color:#25140d;
+    font-weight:900;
+}
+
+.text-stack{
+    min-height:46px;
+    display:flex;
+    align-items:center;
+    padding:0 14px;
+    border-radius:18px;
+    background:rgba(255,255,255,.05);
+    border:1px solid rgba(255,255,255,.06);
+}
+
+#user-input{
+    width:100%;
+    border:none;
+    outline:none;
+    background:transparent;
+    color:white;
+    font-size:15px;
+}
+
+#user-input::placeholder{
+    color:var(--muted);
+}
+
+.attachment-chip{
+    display:none;
+    align-items:center;
+    gap:12px;
+    margin-bottom:10px;
+    padding:10px;
+    border-radius:18px;
+    background:linear-gradient(135deg, rgba(101,228,255,.14), rgba(109,242,194,.08));
+    border:1px solid rgba(255,255,255,.08);
+}
+
+.attachment-chip.visible{
+    display:flex;
+}
+
+.attachment-thumb{
+    width:54px;
+    height:54px;
+    border-radius:14px;
+    object-fit:cover;
+}
+
+.attachment-copy{
+    flex:1;
+}
+
+.attachment-title{
+    font-size:.9rem;
+    font-weight:800;
+}
+
+.attachment-subtitle{
+    margin-top:4px;
+    color:var(--muted);
+    font-size:.75rem;
+}
+
+.attachment-remove{
+    width:36px;
+    height:36px;
+    border:none;
+    border-radius:50%;
+    background:rgba(255,255,255,.08);
+    color:white;
+    cursor:pointer;
+}
+
+/* =========================
+LIGHTBOX
+========================= */
+
+.lightbox{
+    display:none;
+    position:fixed;
+    inset:0;
+    z-index:9999;
+    background:rgba(0,0,0,.96);
+    align-items:center;
+    justify-content:center;
+    padding:16px;
+}
+
+.lightbox.active{
+    display:flex;
+}
+
+.lightbox img{
+    max-width:100%;
+    max-height:88dvh;
+    object-fit:contain;
+    border-radius:14px;
+}
+
+.lightbox-close,
+.lightbox-nav{
+    position:absolute;
+    border:none;
+    cursor:pointer;
+    background:rgba(255,255,255,.12);
+    color:white;
+    backdrop-filter:blur(10px);
+}
+
+.lightbox-close{
+    top:16px;
+    right:16px;
+    width:44px;
+    height:44px;
+    border-radius:50%;
+    font-size:1.4rem;
+}
+
+.lightbox-nav{
+    top:50%;
+    transform:translateY(-50%);
+    width:48px;
+    height:60px;
+    border-radius:16px;
+    font-size:1.8rem;
+}
+
+.lightbox-prev{
+    left:12px;
+}
+
+.lightbox-next{
+    right:12px;
+}
+
+.lightbox-counter{
+    position:absolute;
+    bottom:18px;
+    left:50%;
+    transform:translateX(-50%);
+    padding:8px 12px;
+    border-radius:999px;
+    background:rgba(255,255,255,.12);
+    color:white;
+    font-size:.8rem;
+}
+
+/* =========================
+MOBILE RESPONSIVE
+========================= */
+
+@media(max-width:960px){
+    .app-shell{
+        grid-template-columns:1fr;
+    }
+    .side-rail{
+        position:fixed;
+        left:0;
+        top:0;
+        width:min(320px,84vw);
+        height:100dvh;
+        z-index:3000;
+        transform:translateX(-105%);
+        transition:.24s;
+        box-shadow:20px 0 60px rgba(0,0,0,.65);
+    }
+    body.mobile-menu-open .side-rail{
+        transform:translateX(0);
+    }
+    body.mobile-menu-open::after{
+        content:"";
+        position:fixed;
+        inset:0;
+        background:rgba(0,0,0,.68);
+        z-index:2000;
+    }
+    .mobile-topbar{
+        display:flex;
+    }
+    .mobile-mode-row{
+        display:flex;
+    }
+    .workspace-header{
+        display:none;
+    }
+    #messages{
+        padding:14px 12px;
+    }
+    .message{
+        max-width:94%;
+    }
+    .panel-grid{
+        grid-template-columns:1fr;
+    }
+    .input-area{
+        padding:10px 12px calc(12px + env(safe-area-inset-bottom));
+    }
+    .composer-mode-row{
+        display:none;
+    }
+    .lightbox-nav{
+        width:42px;
+        height:54px;
+    }
+}
+
+@media(max-width:390px){
+    .speech-bubble{
+        max-width:58%;
+    }
+    .bubble-text{
+        font-size:.75rem;
+    }
+    .speech-bubble[data-style="shout"] .bubble-text{
+        font-size:.85rem;
+    }
+}
+</style>
 </head>
+<body>
 
-<body data-mode="gist">
-    <div class="app-shell">
-        <aside class="side-rail">
-            <div class="brand-lockup">
-                <div class="brand-kicker">Creative Studio</div>
-                <div class="logo">VoiceCanvas</div>
-                <p class="brand-copy">Turn a loose idea, a photo, or a scene prompt into an alive-feeling story world with locked character DNA, scene beats, and generated manga panels.</p>
+<div class="app-shell">
+    <aside class="side-rail">
+        <div>
+            <div class="logo-kicker">Manga Studio</div>
+            <div class="logo">VoiceCanvas</div>
+            <div class="logo-sub">Gist ideas. Workshop scenes. Generate manga pages.</div>
+        </div>
+        <div class="sidebar-card">
+            <div class="sidebar-label">Modes</div>
+            <button id="chat-mode-btn" class="mode-btn active">Gist Mode</button>
+            <button id="workshop-mode-btn" class="mode-btn">Workshop</button>
+            <button id="scene-mode-btn" class="mode-btn">Production</button>
+        </div>
+        <div class="sidebar-card">
+            <div class="sidebar-label">Session</div>
+            <div id="mode-indicator">GIST</div>
+            <button id="new-session-btn" class="sidebar-action">Reset Session</button>
+            <button id="test-manga-ui-btn" class="sidebar-action">Test Manga UI</button>
+        </div>
+    </aside>
+
+    <main class="workspace">
+        <div class="mobile-topbar">
+            <button id="mobile-menu-btn" class="mobile-menu-btn">☰</button>
+            <div class="mobile-brand">
+                <div class="mobile-kicker">Manga Studio</div>
+                <div class="mobile-title">VoiceCanvas</div>
             </div>
+            <div id="mobile-mode-indicator">GIST</div>
+            <button id="mobile-test-manga-ui-btn" class="mobile-topbar-btn">Test</button>
+            <button id="mobile-reset-btn" class="mobile-topbar-btn">Reset</button>
+        </div>
 
-            <div class="spotlight-card">
-                <div class="spotlight-badge">Now in Studio Flow</div>
-                <div class="spotlight-title">Bring your ideas to life panel by panel.</div>
-                <p class="spotlight-copy">Attach a face. Drop a vibe. Describe a scene. The app handles character anchoring, dialogue shaping, and panel generation in one stream.</p>
+        <div class="mobile-mode-row">
+            <button id="mobile-chat-mode-btn" class="mobile-mode-btn active">Gist</button>
+            <button id="mobile-workshop-mode-btn" class="mobile-mode-btn">Workshop</button>
+            <button id="mobile-scene-mode-btn" class="mobile-mode-btn">Production</button>
+        </div>
+
+        <div class="workspace-header">
+            <div class="workspace-title">Story Feed</div>
+            <div class="workspace-sub">Generate manga pages first, then inspect individual panels.</div>
+        </div>
+
+        <div id="messages"></div>
+
+        <div class="input-area">
+            <div class="composer-mode-row">
+                <button id="composer-chat-mode-btn" class="composer-mode-btn active">Gist</button>
+                <button id="composer-workshop-mode-btn" class="composer-mode-btn">Workshop</button>
+                <button id="composer-scene-mode-btn" class="composer-mode-btn">Production</button>
             </div>
-
-            <div class="mode-card">
-                <div class="section-label">Modes</div>
-                <div class="mode-row">
-                    <button id="chat-mode-btn" class="mode-btn active">Gist Mode</button>
-                    <button id="workshop-mode-btn" class="mode-btn">Workshop</button>
-                    <button id="scene-mode-btn" class="mode-btn">Production</button>
-                </div>
-                <p id="mode-help" class="mode-help">Quick reactions, idea shaping, and full scene production all live in the same conversation.</p>
-            </div>
-
-            <div class="status-stack">
-                <span id="mode-indicator">GIST</span>
-                <div class="control-row">
-                    <button id="new-session-btn" class="ghost-btn" type="button">Reset Session</button>
-                </div>
-            </div>
-        </aside>
-
-        <main class="workspace">
-            <div class="mobile-topbar">
-                <div class="mobile-brand">
-                    <div class="mobile-kicker">Creative Studio</div>
-                    <div class="mobile-title">VoiceCanvas</div>
-                </div>
-                <div class="mobile-topbar-actions">
-                    <span id="mobile-mode-indicator" class="header-pill">GIST</span>
-                    <button id="mobile-reset-btn" class="mobile-topbar-btn" type="button">Reset</button>
-                </div>
-            </div>
-
-            <div class="mobile-mode-row">
-                <button id="mobile-chat-mode-btn" class="mobile-mode-btn active" type="button">Gist</button>
-                <button id="mobile-workshop-mode-btn" class="mobile-mode-btn" type="button">Workshop</button>
-                <button id="mobile-scene-mode-btn" class="mobile-mode-btn" type="button">Production</button>
-            </div>
-
-            <div class="workspace-header">
-                <div>
-                    <div class="workspace-title">Story Feed</div>
-                    <div class="workspace-copy">Chat, refine scenes, and view generated panels in a vertical cinematic flow. Production mode now feels like a storyboard, not just a transcript.</div>
-                </div>
-
-                <div class="header-pills">
-                    <div class="header-pill">DNA Anchoring</div>
-                    <div class="header-pill">Scene Memory</div>
-                    <div class="header-pill">Panel Render Ready</div>
-                </div>
-            </div>
-
-            <div id="casting-modal">
-                <div class="modal-card">
-                    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
-                        <div>
-                            <h3 style="color:var(--brand-gold);">Casting Office</h3>
-                            <p style="font-size:12px; color:var(--text-soft); margin-top:6px;">Assign production voices before creating the audio version.</p>
-                        </div>
-
-                        <button id="close-casting-btn"
-                                style="background:rgba(255,255,255,0.06); border:none; color:var(--text-soft); width:36px; height:36px; border-radius:50%; cursor:pointer;">
-                            ×
-                        </button>
+            <div class="composer-shell">
+                <input type="file" id="dna-upload" accept="image/*" style="display:none;" />
+                <div id="attachment-chip" class="attachment-chip">
+                    <img id="attachment-thumb" class="attachment-thumb" />
+                    <div class="attachment-copy">
+                        <div class="attachment-title">Reference Image</div>
+                        <div id="attachment-name" class="attachment-subtitle"></div>
                     </div>
-
-                    <div id="character-list" class="casting-list"></div>
-
-                    <div class="casting-actions">
-                        <button id="start-production-btn"
-                            style="width:100%; padding:14px; border:none; background:linear-gradient(135deg, var(--brand-coral), var(--brand-gold)); color:#23160f; border-radius:16px; font-weight:800; cursor:pointer;">
-                            START PRODUCTION
-                        </button>
+                    <button id="attachment-remove" class="attachment-remove">×</button>
+                </div>
+                <div class="input-row">
+                    <button id="attach-btn" class="attach-btn">+</button>
+                    <button id="toggle-tts-btn" class="attach-btn">🔊</button>
+                    <div class="text-stack">
+                        <input id="user-input" placeholder="Drop an idea..." />
                     </div>
+                    <button id="send-btn" class="action-btn">➤</button>
                 </div>
             </div>
+        </div>
+    </main>
+</div>
 
-            <div id="messages"></div>
+<div id="image-lightbox" class="lightbox">
+    <button id="lightbox-close" class="lightbox-close">×</button>
+    <button id="lightbox-prev" class="lightbox-nav lightbox-prev">‹</button>
+    <img id="lightbox-image" />
+    <button id="lightbox-next" class="lightbox-nav lightbox-next">›</button>
+    <div id="lightbox-counter" class="lightbox-counter">1 / 1</div>
+</div>
 
-            <div class="input-area">
-                <div id="live-status" class="live-status"></div>
-
-                <div class="composer-mode-row">
-                    <button id="composer-chat-mode-btn" class="composer-mode-btn active" type="button">Gist</button>
-                    <button id="composer-workshop-mode-btn" class="composer-mode-btn" type="button">Workshop</button>
-                    <button id="composer-scene-mode-btn" class="composer-mode-btn" type="button">Production</button>
-                </div>
-
-                <div class="composer-shell">
-                    <input type="file" id="dna-upload" accept="image/*" style="display:none;" />
-
-                    <div id="attachment-chip" class="attachment-chip">
-                        <img id="attachment-thumb" class="attachment-thumb" alt="Attachment preview" />
-                        <div class="attachment-copy">
-                            <div class="attachment-title">Reference image staged</div>
-                            <div id="attachment-name" class="attachment-subtitle"></div>
-                        </div>
-                        <button id="attachment-remove" class="attachment-remove" type="button">×</button>
-                    </div>
-
-                    <div class="input-row">
-                        <button id="attach-btn" class="attach-btn" type="button">+</button>
-                        <button id="toggle-tts-btn" class="attach-btn" type="button">🔊</button>
-
-                        <div class="text-stack">
-                            <input id="user-input" placeholder="Drop a message, image, or scene idea..." />
-                        </div>
-
-                        <button id="mic-btn" class="action-btn" type="button">🎙️</button>
-                        <button id="send-btn" class="action-btn" type="button" style="display:none;">➤</button>
-                    </div>
-                </div>
-
-                <div id="composer-hint" class="composer-hint">
-                    <span>Add a photo and caption together for clean DNA anchoring.</span>
-                    <span>Panels stack vertically in Production mode.</span>
-                </div>
-            </div>
-        </main>
-    </div>
-
-    <script src="/static/app.js"></script>
+<script src="/static/app.js"></script>
 </body>
 </html>

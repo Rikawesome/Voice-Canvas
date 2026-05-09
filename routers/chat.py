@@ -20,6 +20,8 @@ from services.llm import generate_response, identify_character_from_text
 from models.session import Session
 import edge_tts
 import httpx
+from services.layout_vision import analyze_manga_layout
+from services.layout_planner import plan_bubble_layout
 
 load_dotenv()
 
@@ -769,3 +771,62 @@ async def upload_dna(
         print(f"❌ DNA Upload Error: {e}")
         traceback.print_exc()
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@router.post("/layout-preview")
+async def layout_preview(
+    file: UploadFile = File(...),
+    dialogue: Optional[str] = Form(None),
+):
+    try:
+        image_bytes = await file.read()
+        if not image_bytes:
+            return JSONResponse({"error": "No image uploaded"}, status_code=400)
+
+        lines = [
+            chunk.strip()
+            for chunk in re.split(r"[\n|]+", dialogue or "")
+            if chunk.strip()
+        ]
+        dialogue_lines = lines or [
+            "Where is he?",
+            "...behind you.",
+            "Move!",
+            "This ends tonight.",
+        ]
+        used_fallback = False
+        fallback_reason = None
+
+        try:
+            analysis = await analyze_manga_layout(image_bytes, dialogue_lines)
+        except Exception as vision_error:
+            used_fallback = True
+            fallback_reason = str(vision_error)
+            analysis = {
+                "page_title": "Local layout fallback",
+                "notes": "Gemini was unavailable, so VoiceCanvas used its built-in layout planner.",
+                "safe_regions": [],
+                "avoid_regions": [],
+                "speaker_regions": {},
+                "suggested_bubbles": [],
+            }
+
+        planned = plan_bubble_layout(dialogue_lines, analysis)
+        mime_type = getattr(file, "content_type", None) or "image/jpeg"
+        encoded = base64.b64encode(image_bytes).decode("utf-8")
+        image_data_url = f"data:{mime_type};base64,{encoded}"
+
+        return {
+            "label": analysis["page_title"],
+            "notes": analysis["notes"],
+            "image_url": image_data_url,
+            "dialogue_lines": dialogue_lines,
+            "analysis": analysis,
+            "bubbles": planned["planned_bubbles"],
+            "planner": planned,
+            "used_fallback": used_fallback,
+            "fallback_reason": fallback_reason,
+        }
+    except Exception as e:
+        print(f"Gemini layout preview error: {e}")
+        return JSONResponse({"error": str(e)}, status_code=502)

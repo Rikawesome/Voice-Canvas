@@ -8,868 +8,665 @@ let isRecording = false;
 let mediaRecorder = null;
 let audioChunks = [];
 let currentAudio = null;
-let lastSceneScript = null;
+
 let pendingImageFile = null;
 let pendingImagePreviewUrl = null;
 
-const CHAT_HISTORY_KEY = 'voicecanvas_chat_history';
-const MODE_KEY = 'voicecanvas_mode';
-const LAST_SCENE_KEY = 'voicecanvas_last_scene_script';
+let lightboxImages = [];
+let lightboxIndex = 0;
+let lightboxTouchStartX = 0;
+let activeBubbleDrag = null;
 
 const inputField = document.getElementById('user-input');
 const messagesDiv = document.getElementById('messages');
 const micBtn = document.getElementById('mic-btn');
 const sendBtn = document.getElementById('send-btn');
-const ttsToggle = document.getElementById('toggle-tts-btn');
-const castingModal = document.getElementById('casting-modal');
-const charList = document.getElementById('character-list');
-const liveStatus = document.getElementById('live-status');
-const modeIndicator = document.getElementById('mode-indicator');
+
 const chatModeBtn = document.getElementById('chat-mode-btn');
 const workshopModeBtn = document.getElementById('workshop-mode-btn');
 const sceneModeBtn = document.getElementById('scene-mode-btn');
-const mobileModeIndicator = document.getElementById('mobile-mode-indicator');
-const mobileResetBtn = document.getElementById('mobile-reset-btn');
+
 const mobileChatModeBtn = document.getElementById('mobile-chat-mode-btn');
 const mobileWorkshopModeBtn = document.getElementById('mobile-workshop-mode-btn');
 const mobileSceneModeBtn = document.getElementById('mobile-scene-mode-btn');
+
 const composerChatModeBtn = document.getElementById('composer-chat-mode-btn');
 const composerWorkshopModeBtn = document.getElementById('composer-workshop-mode-btn');
 const composerSceneModeBtn = document.getElementById('composer-scene-mode-btn');
+
+const modeIndicator = document.getElementById('mode-indicator');
+const mobileModeIndicator = document.getElementById('mobile-mode-indicator');
+
 const attachBtn = document.getElementById('attach-btn');
 const dnaInput = document.getElementById('dna-upload');
+
 const attachmentChip = document.getElementById('attachment-chip');
 const attachmentThumb = document.getElementById('attachment-thumb');
 const attachmentName = document.getElementById('attachment-name');
 const attachmentRemove = document.getElementById('attachment-remove');
-const composerHint = document.getElementById('composer-hint');
+
+const desktopTestMangaBtn = document.getElementById('test-manga-ui-btn');
+const mobileTestMangaBtn = document.getElementById('mobile-test-manga-ui-btn');
+const newSessionBtn = document.getElementById('new-session-btn');
+const mobileResetBtn = document.getElementById('mobile-reset-btn');
+
+const lightbox = document.getElementById('image-lightbox');
+const lightboxImage = document.getElementById('lightbox-image');
+const lightboxCloseBtn = document.getElementById('lightbox-close');
+const lightboxPrevBtn = document.getElementById('lightbox-prev');
+const lightboxNextBtn = document.getElementById('lightbox-next');
+const lightboxCounter = document.getElementById('lightbox-counter');
 
 const MODE_META = {
-    gist: {
-        label: 'GIST',
-        placeholder: 'Type a message or add a photo...',
-    },
-    workshop: {
-        label: 'WORKSHOP',
-        placeholder: 'Shape the idea, plot beats, or drop a reference image...',
-    },
-    scene: {
-        label: 'PRODUCTION',
-        placeholder: 'Describe the scene or attach a character reference...',
-    },
+    gist: { label: 'GIST', placeholder: 'Drop an idea...' },
+    workshop: { label: 'WORKSHOP', placeholder: 'Develop the story, lore, characters...' },
+    scene: { label: 'PRODUCTION', placeholder: 'Describe the exact manga scene...' }
 };
 
-const PRODUCTION_VOICES = [
-    { value: 'narrator', label: 'Narrator' },
-    { value: 'lead_male', label: 'Lead Male' },
-    { value: 'lead_female', label: 'Lead Female' },
-    { value: 'villain', label: 'Villain' },
+const BUBBLE_STYLE_CYCLE = ['speech', 'thought', 'shout', 'caption', 'sfx'];
+const PROJECT_STORAGE_KEY = 'voicecanvas_project_v2';
+
+let projectState = { messages: [] };
+
+// =========================
+// MANGA-STYLE PLACEHOLDER GENERATOR (FIXED)
+// =========================
+
+function createMangaStylePlaceholder({ seed = 'panel', width = 600, height = 800, panelNumber = 1 }) {
+    const hash = Array.from(seed).reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    
+    const bgVariants = [
+        '#f5f5f0', '#f0ece4', '#faf7f0', '#f2efe8'
+    ];
+    const bgColor = bgVariants[(panelNumber - 1) % bgVariants.length];
+    
+    const getCharacterSVG = (pNum) => {
+        const w = width, h = height;
+        
+        switch(pNum) {
+            case 1:
+                return `<g transform="translate(${w/4}, ${h/2})">
+                    <ellipse cx="0" cy="30" rx="35" ry="70" fill="#2a2a35" stroke="#1a1a20" stroke-width="2"/>
+                    <circle cx="0" cy="-40" r="30" fill="#2a2a35" stroke="#1a1a20" stroke-width="2"/>
+                    <circle cx="-12" cy="-45" r="6" fill="#1a1a20"/>
+                    <circle cx="12" cy="-45" r="6" fill="#1a1a20"/>
+                    <path d="M-10,-28 Q0,-18 10,-28" stroke="#1a1a20" stroke-width="2.5" fill="none"/>
+                </g>
+                <g transform="translate(${w * 3/4}, ${h/2})">
+                    <ellipse cx="0" cy="30" rx="40" ry="75" fill="#3a3a48" stroke="#1a1a20" stroke-width="2"/>
+                    <circle cx="0" cy="-45" r="35" fill="#3a3a48" stroke="#1a1a20" stroke-width="2"/>
+                    <circle cx="-15" cy="-50" r="7" fill="#1a1a20"/>
+                    <circle cx="15" cy="-50" r="7" fill="#1a1a20"/>
+                    <path d="M-12,-32 Q0,-22 12,-32" stroke="#1a1a20" stroke-width="2.5" fill="none"/>
+                </g>`;
+            case 2:
+                return `<g transform="translate(${w/2}, ${h/2 + 20})">
+                    <ellipse cx="-20" cy="20" rx="45" ry="85" fill="#2a2a35" stroke="#1a1a20" stroke-width="2"/>
+                    <circle cx="-20" cy="-45" r="40" fill="#2a2a35" stroke="#1a1a20" stroke-width="2"/>
+                    <circle cx="-40" cy="-52" r="9" fill="#1a1a20"/>
+                    <circle cx="-5" cy="-52" r="9" fill="#1a1a20"/>
+                    <path d="M-40,-30 L-20,-15 L-5,-30" stroke="#1a1a20" stroke-width="3" fill="none"/>
+                    <line x1="30" y1="-80" x2="100" y2="-60" stroke="#888" stroke-width="2.5" stroke-linecap="round"/>
+                    <line x1="35" y1="-45" x2="110" y2="-25" stroke="#888" stroke-width="2.5" stroke-linecap="round"/>
+                    <line x1="30" y1="-15" x2="90" y2="5" stroke="#888" stroke-width="2.5" stroke-linecap="round"/>
+                </g>`;
+            case 3:
+                return `<rect x="${w*0.05}" y="${h*0.3}" width="${w*0.12}" height="${h*0.65}" fill="#3a3a48" stroke="#1a1a20" stroke-width="2"/>
+                    <rect x="${w*0.2}" y="${h*0.2}" width="${w*0.15}" height="${h*0.75}" fill="#2a2a35" stroke="#1a1a20" stroke-width="2"/>
+                    <rect x="${w*0.4}" y="${h*0.35}" width="${w*0.1}" height="${h*0.6}" fill="#4a4a58" stroke="#1a1a20" stroke-width="2"/>
+                    <rect x="${w*0.55}" y="${h*0.25}" width="${w*0.18}" height="${h*0.7}" fill="#353542" stroke="#1a1a20" stroke-width="2"/>
+                    <rect x="${w*0.78}" y="${h*0.4}" width="${w*0.12}" height="${h*0.55}" fill="#3a3a48" stroke="#1a1a20" stroke-width="2"/>
+                    <g transform="translate(${w/2}, ${h - h*0.2})">
+                        <ellipse cx="0" cy="15" rx="20" ry="40" fill="#2a2a35" stroke="#1a1a20" stroke-width="2"/>
+                        <circle cx="0" cy="-20" r="18" fill="#2a2a35" stroke="#1a1a20" stroke-width="2"/>
+                        <circle cx="-8" cy="-23" r="4" fill="#1a1a20"/>
+                        <circle cx="8" cy="-23" r="4" fill="#1a1a20"/>
+                    </g>`;
+            default:
+                return `<g transform="translate(${w/2}, ${h/2 + 30})">
+                    <ellipse cx="0" cy="20" rx="40" ry="75" fill="#2a2a35" stroke="#1a1a20" stroke-width="2"/>
+                    <circle cx="0" cy="-40" r="38" fill="#2a2a35" stroke="#1a1a20" stroke-width="2"/>
+                    <circle cx="-14" cy="-46" r="8" fill="#1a1a20"/>
+                    <circle cx="14" cy="-46" r="8" fill="#1a1a20"/>
+                    <ellipse cx="0" cy="-20" rx="12" ry="8" fill="#1a1a20"/>
+                    <path d="M-40,-60 Q-45,-80 -35,-100" stroke="#5a8aaa" stroke-width="2" fill="none"/>
+                </g>`;
+        }
+    };
+    
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" height="100%">
+        <defs>
+            <pattern id="halftone${panelNumber}" width="10" height="10" patternUnits="userSpaceOnUse">
+                <circle cx="2" cy="2" r="1.2" fill="#333" opacity="0.1"/>
+                <circle cx="7" cy="7" r="0.8" fill="#333" opacity="0.06"/>
+            </pattern>
+        </defs>
+        
+        <rect width="${width}" height="${height}" fill="${bgColor}"/>
+        <rect width="${width}" height="${height}" fill="url(#halftone${panelNumber})" opacity="0.4"/>
+        
+        ${getCharacterSVG(panelNumber)}
+        
+        <rect x="3" y="3" width="${width-6}" height="${height-6}" fill="none" stroke="#1a1a1a" stroke-width="6"/>
+        <rect x="8" y="8" width="${width-16}" height="${height-16}" fill="none" stroke="#333" stroke-width="1.5"/>
+        
+        <path d="M0,0 L20,0 L0,20 Z" fill="#1a1a1a"/>
+        <path d="M${width},0 L${width-20},0 L${width},20 Z" fill="#1a1a1a"/>
+        <path d="M0,${height} L20,${height} L0,${height-20} Z" fill="#1a1a1a"/>
+        <path d="M${width},${height} L${width-20},${height} L${width},${height-20} Z" fill="#1a1a1a"/>
+    </svg>`;
+    
+    return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+const PLACEHOLDER_PANEL_IMAGES = [
+    createMangaStylePlaceholder({ seed: 'panel-1', panelNumber: 1, width: 600, height: 800 }),
+    createMangaStylePlaceholder({ seed: 'panel-2', panelNumber: 2, width: 600, height: 800 }),
+    createMangaStylePlaceholder({ seed: 'panel-3', panelNumber: 3, width: 600, height: 800 }),
+    createMangaStylePlaceholder({ seed: 'panel-4', panelNumber: 4, width: 600, height: 800 })
 ];
 
-// =========================
-// IMAGE ATTACHMENT / DNA
-// =========================
+const PLACEHOLDER_PAGE_IMAGE = createMangaStylePlaceholder({ seed: 'page', panelNumber: 1, width: 1200, height: 1600 });
 
-if (attachBtn && dnaInput) {
-    attachBtn.onclick = () => dnaInput.click();
+function normalizeBubbles(bubbles = []) {
+    if (!Array.isArray(bubbles) || bubbles.length === 0) {
+        return [
+            { text: "What are you doing here?", x: 0.08, y: 0.12, w: 0.32, type: "speech", tail: "bottom-left" },
+            { text: "I've been looking for you.", x: 0.52, y: 0.08, w: 0.34, type: "speech", tail: "bottom-right" },
+            { text: "We need to talk.", x: 0.12, y: 0.48, w: 0.28, type: "shout", tail: "top-left" },
+            { text: "KRACK", x: 0.68, y: 0.62, w: 0.14, type: "sfx", tail: "none" }
+        ];
+    }
+    return bubbles.map(cloneBubbleData);
 }
 
-if (dnaInput) {
-    dnaInput.onchange = () => {
-        const file = dnaInput.files[0];
-        if (!file) return;
-
-        if (pendingImagePreviewUrl) {
-            URL.revokeObjectURL(pendingImagePreviewUrl);
-        }
-
-        pendingImageFile = file;
-        pendingImagePreviewUrl = URL.createObjectURL(file);
-
-        if (attachmentThumb) attachmentThumb.src = pendingImagePreviewUrl;
-        if (attachmentName) attachmentName.innerText = file.name;
-        if (attachmentChip) attachmentChip.classList.add('visible');
-        if (composerHint) {
-            composerHint.innerText = 'Send the photo with a caption like "This is Andrew" or just send the image.';
-        }
-
-        toggleInputButtons(inputField.value.trim().length > 0 || Boolean(pendingImageFile));
+function cloneBubbleData(bubble = {}) {
+    const x = typeof bubble.x === 'number' ? bubble.x : 0.14;
+    const y = typeof bubble.y === 'number' ? bubble.y : 0.12;
+    const type = bubble.type || bubble.style || 'speech';
+    return {
+        text: bubble.text || '...',
+        x, y,
+        w: typeof bubble.w === 'number' ? bubble.w : 0.34,
+        type,
+        tail: bubble.tail || inferTailFromPosition(x, y, type)
     };
 }
 
-if (attachmentRemove) {
-    attachmentRemove.onclick = clearPendingImage;
+function inferTailFromPosition(x, y, type = 'speech') {
+    if (type === 'caption' || type === 'sfx') return 'bottom-left';
+    const vertical = y <= 0.24 ? 'bottom' : 'top';
+    const horizontal = x >= 0.52 ? 'right' : 'left';
+    return `${vertical}-${horizontal}`;
 }
 
-function clearPendingImage() {
-    pendingImageFile = null;
+function applyBubbleLayoutDefaults(bubbles = []) {
+    return bubbles.map((bubble, index) => {
+        const type = bubble.type || 'speech';
+        const width = estimateBubbleWidth(bubble.text || '...', type);
+        const placement = inferBubblePlacement(index, bubbles.length, type, bubble.x, bubble.y, width);
+        return {
+            ...bubble,
+            x: placement.x, y: placement.y, w: width,
+            tail: bubble.tail || inferTailFromPosition(placement.x, placement.y, type)
+        };
+    });
+}
 
-    if (dnaInput) dnaInput.value = '';
-    if (attachmentChip) attachmentChip.classList.remove('visible');
-    if (attachmentThumb) attachmentThumb.removeAttribute('src');
-    if (attachmentName) attachmentName.innerText = '';
-    if (composerHint) {
-        composerHint.innerText = 'Add a photo with your message and Andrew will sort the DNA automatically.';
+function estimateBubbleWidth(text = '', type = 'speech') {
+    const normalized = String(text).trim().replace(/\s+/g, ' ');
+    const length = normalized.length || 1;
+    const longestWord = normalized.split(' ').reduce((max, word) => Math.max(max, word.length), 0);
+    let width;
+    if (type === 'caption') width = 0.22 + Math.min(0.18, length / 220);
+    else if (type === 'sfx') width = 0.16 + Math.min(0.12, longestWord / 80);
+    else if (type === 'shout') width = 0.24 + Math.min(0.16, length / 150);
+    else if (type === 'thought') width = 0.24 + Math.min(0.16, length / 170);
+    else width = 0.23 + Math.min(0.18, length / 165);
+    width = Math.max(width, 0.16 + Math.min(0.2, longestWord / 60));
+    return Math.min(0.56, Math.max(0.18, Number(width.toFixed(3))));
+}
+
+function inferBubblePlacement(index, total, type, x, y, width) {
+    const hasManualX = typeof x === 'number';
+    const hasManualY = typeof y === 'number';
+    if (hasManualX && hasManualY) {
+        return { x: clampValue(x, 0.04, 0.92 - width), y: clampValue(y, 0.04, 0.8) };
     }
-
-    if (pendingImagePreviewUrl) {
-        URL.revokeObjectURL(pendingImagePreviewUrl);
-        pendingImagePreviewUrl = null;
-    }
-
-    toggleInputButtons(inputField.value.trim().length > 0);
+    const presets = total > 1 ? [{ x: 0.08, y: 0.08 }, { x: 0.56, y: 0.16 }, { x: 0.1, y: 0.56 }, { x: 0.54, y: 0.66 }] : [{ x: 0.1, y: 0.1 }];
+    const chosen = presets[Math.min(index, presets.length - 1)];
+    if (type === 'caption') return { x: hasManualX ? clampValue(x, 0.04, 0.92 - width) : 0.08, y: hasManualY ? clampValue(y, 0.04, 0.8) : 0.05 };
+    if (type === 'sfx') return { x: hasManualX ? clampValue(x, 0.04, 0.92 - width) : (index % 2 === 0 ? 0.62 : 0.12), y: hasManualY ? clampValue(y, 0.04, 0.8) : (index % 2 === 0 ? 0.58 : 0.64) };
+    return { x: hasManualX ? clampValue(x, 0.04, 0.92 - width) : clampValue(chosen.x, 0.04, 0.92 - width), y: hasManualY ? clampValue(y, 0.04, 0.8) : chosen.y };
 }
 
-// =========================
-// MODE SYSTEM
-// =========================
-
-function setMode(mode) {
-    currentMode = MODE_META[mode] ? mode : 'gist';
-
-    document.body.dataset.mode = currentMode;
-    localStorage.setItem(MODE_KEY, currentMode);
-
-    if (modeIndicator) {
-        modeIndicator.innerText = MODE_META[currentMode].label;
-    }
-    if (mobileModeIndicator) {
-        mobileModeIndicator.innerText = MODE_META[currentMode].label;
-    }
-
-    if (inputField) {
-        inputField.placeholder = MODE_META[currentMode].placeholder;
-    }
-
-    if (chatModeBtn) chatModeBtn.classList.toggle('active', currentMode === 'gist');
-    if (workshopModeBtn) workshopModeBtn.classList.toggle('active', currentMode === 'workshop');
-    if (sceneModeBtn) sceneModeBtn.classList.toggle('active', currentMode === 'scene');
-    if (mobileChatModeBtn) mobileChatModeBtn.classList.toggle('active', currentMode === 'gist');
-    if (mobileWorkshopModeBtn) mobileWorkshopModeBtn.classList.toggle('active', currentMode === 'workshop');
-    if (mobileSceneModeBtn) mobileSceneModeBtn.classList.toggle('active', currentMode === 'scene');
-    if (composerChatModeBtn) composerChatModeBtn.classList.toggle('active', currentMode === 'gist');
-    if (composerWorkshopModeBtn) composerWorkshopModeBtn.classList.toggle('active', currentMode === 'workshop');
-    if (composerSceneModeBtn) composerSceneModeBtn.classList.toggle('active', currentMode === 'scene');
-
-    if (window.innerWidth <= 960) {
-        closeMobileMenu();
-    }
-
-    updateLiveStatus();
+function clampValue(value, min, max) {
+    return Math.min(max, Math.max(min, value));
 }
 
-function saveChatToLocal() {
-    if (!messagesDiv) return;
-    localStorage.setItem(CHAT_HISTORY_KEY, messagesDiv.innerHTML);
+function clonePanelData(panel = {}) {
+    return { image_url: panel.image_url || panel.url || '', speaker: panel.speaker || 'Scene', bubbles: normalizeBubbles(panel.bubbles).map(cloneBubbleData) };
 }
 
-function loadChatFromLocal() {
-    if (!messagesDiv) return false;
-
-    const savedChat = localStorage.getItem(CHAT_HISTORY_KEY);
-    if (!savedChat) return false;
-
-    messagesDiv.innerHTML = savedChat;
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    return true;
+function clonePageData(page = {}) {
+    return { image_url: page.image_url || page.url || '', label: page.label || 'Generated manga page', bubbles: normalizeBubbles(page.bubbles).map(cloneBubbleData) };
 }
 
-function saveLastSceneScript(scriptText) {
-    lastSceneScript = scriptText || '';
-    localStorage.setItem(LAST_SCENE_KEY, lastSceneScript);
+function createBubbleLayer(bubbles = [], location = {}) {
+    const layer = document.createElement('div');
+    layer.className = 'bubble-layer';
+    bubbles.forEach((bubble, index) => {
+        const node = document.createElement('div');
+        node.className = 'speech-bubble';
+        node.dataset.style = bubble.type || bubble.style || 'speech';
+        node.dataset.tail = bubble.tail || 'bottom-left';
+        node.style.left = `${(bubble.x || 0) * 100}%`;
+        node.style.top = `${(bubble.y || 0) * 100}%`;
+        node.style.width = `${Math.max(16, (bubble.w || 0.28) * 100)}%`;
+        node.dataset.messageIndex = String(location.messageIndex ?? -1);
+        node.dataset.panelIndex = String(location.panelIndex ?? -1);
+        node.dataset.bubbleIndex = String(index);
+        
+        const toolbar = document.createElement('div');
+        toolbar.className = 'bubble-toolbar';
+        const dragTool = document.createElement('button');
+        dragTool.className = 'bubble-tool'; dragTool.type = 'button'; dragTool.dataset.action = 'drag'; dragTool.innerText = 'Move';
+        const styleTool = document.createElement('button');
+        styleTool.className = 'bubble-tool'; styleTool.type = 'button'; styleTool.dataset.action = 'style'; styleTool.innerText = 'Type';
+        toolbar.appendChild(dragTool); toolbar.appendChild(styleTool);
+        
+        const text = document.createElement('div');
+        text.className = 'bubble-text';
+        text.contentEditable = 'true';
+        text.spellcheck = false;
+        text.innerText = bubble.text || '...';
+        
+        const handle = document.createElement('div');
+        handle.className = 'bubble-handle';
+        handle.dataset.action = 'resize';
+        
+        node.appendChild(toolbar);
+        node.appendChild(text);
+        node.appendChild(handle);
+        layer.appendChild(node);
+    });
+    return layer;
 }
 
-function loadLastSceneScript() {
-    lastSceneScript = localStorage.getItem(LAST_SCENE_KEY) || null;
-}
-
-function isMobileViewport() {
-    return window.innerWidth <= 960;
-}
-
-function openMobileMenu() {
-    return;
-}
-
-function closeMobileMenu() {
-    return;
-}
-
-function toggleMobileMenu() {
-    return;
-}
-
-function updateLiveStatus(detail = '') {
-    if (!liveStatus) return;
-
-    if (!isLiveMode) {
-        liveStatus.classList.remove('active');
-        liveStatus.innerHTML = '';
-        return;
-    }
-
-    const modeLabel = MODE_META[currentMode]?.label || 'GIST';
-    liveStatus.classList.add('active');
-    liveStatus.innerHTML = `<strong>Live Voice Chat</strong> is on in ${modeLabel} mode.${detail ? ` ${detail}` : ''}`;
-}
-
-// =========================
-// CHAT
-// =========================
-
-async function sendMessage() {
-    const text = inputField.value.trim();
-    const file = pendingImageFile;
-
-    if (!text && !file) return;
-
-    const displayText = text || '(Sent a photo)';
-
-    inputField.value = '';
-    clearPendingImage();
-    toggleInputButtons(false);
-    appendMessage('user', displayText);
-
-    const typingDiv = appendMessage('assistant', '...');
-
-    try {
-        const formData = new FormData();
-        formData.append('user_input', text);
-        formData.append('mode', currentMode);
-
-        if (file) {
-            formData.append('file', file);
-        }
-
-        const res = await fetch(`/chat/message/${currentSessionId || 'new'}`, {
-            method: 'POST',
-            body: formData,
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-            throw new Error(data?.error || 'Request failed');
-        }
-
-        updateSessionState(data);
-
-        if (data.trigger_cast) {
-            saveLastSceneScript(data.reply || data.data || '');
-            setMode('scene');
-        }
-
-        animateText(typingDiv, data.reply || data.data || '');
-
-        if (data.dna_status) {
-            appendMessage('system', data.dna_status);
-        }
-
-        // 🔥 Manga panel rendering support
-        if (Array.isArray(data.panels) && data.panels.length > 0) {
-            appendMangaPanels(data.panels);
-        }
-
-        if (data.manga_page) {
-            appendMangaPage(data.manga_page);
-        } else if (data.manga_page_url) {
-            appendMangaPage(data.manga_page_url);
-        }
-
-        if (data.panel_error) {
-            appendMessage('system', data.panel_error);
-        }
-
-        if (data.trigger_cast) {
-            attachSceneActions(typingDiv, data.characters);
-        }
-
-        if (autoTTSEnabled && !data.trigger_cast) {
-            speakExactText(data.reply || data.data || '');
-        }
-
-    } catch (e) {
-        typingDiv.innerText = `Request failed: ${e.message}`;
-        typingDiv.dataset.rawText = typingDiv.innerText;
-    }
-}
-
-function animateText(element, text) {
-    element.dataset.rawText = text;
-    element.innerText = '';
-
-    const words = String(text || '').split(' ');
-    let i = 0;
-
-    const interval = setInterval(() => {
-        if (i < words.length) {
-            element.innerText += words[i] + ' ';
-            i += 1;
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        } else {
-            clearInterval(interval);
-            saveChatToLocal();
-        }
-    }, 35);
-}
-
-// =========================
-// TTS
-// =========================
-
-async function speakExactText(text) {
-    if (!text || !text.trim()) return;
-
-    try {
-        const res = await fetch('/chat/speak', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                message: text,
-                session_id: currentSessionId,
-                mode: currentMode,
-            }),
-        });
-
-        if (!res.ok) return;
-
-        const blob = await res.blob();
-        playAudio(URL.createObjectURL(blob));
-    } catch (e) {
-        console.error('TTS error', e);
-    }
-}
-
-function playAudio(source) {
-    if (currentAudio) {
-        currentAudio.pause();
-        currentAudio = null;
-    }
-
-    currentAudio = new Audio(source);
-    currentAudio.play().catch(() => {});
-}
-
-// =========================
-// AUDIO PRODUCTION
-// =========================
-
-function showProducedAudio(source, label = 'Scene audio ready') {
-    const container = document.createElement('div');
-    container.className = 'message assistant';
-    container.style.display = 'flex';
-    container.style.flexDirection = 'column';
-    container.style.gap = '8px';
-
+function renderMangaPage(page = {}, messageIndex = 0) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'message assistant manga-page-card';
+    const top = document.createElement('div');
+    top.className = 'manga-page-top';
     const title = document.createElement('div');
-    title.innerText = label;
-
-    const audio = document.createElement('audio');
-    audio.controls = true;
-    audio.preload = 'auto';
-    audio.src = source;
-    audio.style.width = '100%';
-
-    const download = document.createElement('a');
-    download.href = source;
-    download.download = 'voicecanvas-scene.mp3';
-    download.innerText = 'Download scene audio';
-    download.style.color = '#7ee7cf';
-    download.style.fontSize = '14px';
-
-    container.appendChild(title);
-    container.appendChild(audio);
-    container.appendChild(download);
-    messagesDiv.appendChild(container);
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    saveChatToLocal();
-
-    currentAudio = audio;
-    audio.play().catch(() => {});
+    title.className = 'manga-page-title';
+    title.innerText = page.label || 'Generated manga page';
+    const hint = document.createElement('div');
+    hint.className = 'manga-page-hint';
+    hint.innerText = 'Tap to view fullscreen';
+    top.appendChild(title); top.appendChild(hint);
+    const button = document.createElement('div');
+    button.className = 'manga-page-preview';
+    button.tabIndex = 0;
+    button.setAttribute('role', 'button');
+    button.dataset.lightboxImages = JSON.stringify([page.image_url]);
+    button.dataset.lightboxIndex = '0';
+    const img = document.createElement('img');
+    img.src = page.image_url;
+    img.alt = page.label || 'Generated manga page';
+    button.appendChild(img);
+    button.appendChild(createBubbleLayer(normalizeBubbles(page.bubbles), { messageIndex, panelIndex: null }));
+    wrapper.appendChild(top); wrapper.appendChild(button);
+    return wrapper;
 }
 
-function attachSceneActions(messageElement, characters) {
-    const actions = document.createElement('div');
-    actions.className = 'scene-actions';
-
-    const produceBtn = document.createElement('button');
-    produceBtn.className = 'scene-action-btn';
-    produceBtn.innerText = 'Cast and Produce';
-    produceBtn.dataset.sceneAction = 'produce';
-
-    const workshopBtn = document.createElement('button');
-    workshopBtn.className = 'scene-action-btn';
-    workshopBtn.innerText = 'Back to Workshop';
-    workshopBtn.dataset.sceneAction = 'workshop';
-
-    actions.appendChild(produceBtn);
-    actions.appendChild(workshopBtn);
-    messageElement.appendChild(actions);
-    saveChatToLocal();
-}
-
-// =========================
-// LIVE SESSION
-// =========================
-
-if (micBtn) {
-    micBtn.onclick = () => {
-        if (!isLiveMode) {
-            startLiveMode();
-        } else {
-            stopLiveMode();
-        }
-    };
-}
-
-async function startLiveMode() {
-    try {
-        liveStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        isLiveMode = true;
-
-        micBtn.classList.add('active-live');
-        micBtn.innerText = 'LIVE';
-
-        updateLiveStatus('Listening for your next take...');
-        appendMessage('assistant', "Live session ON - I'm listening...");
-        startRecordingLoop(liveStream);
-    } catch (e) {
-        alert('Mic permission blocked');
-    }
-}
-
-function stopLiveMode() {
-    isLiveMode = false;
-
-    micBtn.classList.remove('active-live');
-    micBtn.innerText = '🎙️';
-
-    updateLiveStatus();
-
-    if (mediaRecorder && isRecording) {
-        mediaRecorder.stop();
-    }
-
-    if (liveStream) {
-        liveStream.getTracks().forEach(track => track.stop());
-        liveStream = null;
-    }
-
-    appendMessage('assistant', 'Live session OFF');
-}
-
-function startRecordingLoop(stream) {
-    audioChunks = [];
-    mediaRecorder = new MediaRecorder(stream);
-
-    mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-            audioChunks.push(event.data);
-        }
-    };
-
-    mediaRecorder.onstop = async () => {
-        const blob = new Blob(audioChunks, { type: 'audio/webm' });
-
-        if (isLiveMode) {
-            updateLiveStatus('Transcribing and replying...');
-            await sendLiveAudio(blob);
-            startRecordingLoop(stream);
-        }
-    };
-
-    mediaRecorder.start();
-    isRecording = true;
-}
-
-async function sendLiveAudio(blob) {
-    const fd = new FormData();
-    fd.append('audio', blob);
-
-    if (currentSessionId) {
-        fd.append('session_id', currentSessionId);
-    }
-
-    fd.append('mode', currentMode);
-
-    const typingDiv = appendMessage('assistant', '...');
-
-    try {
-        const res = await fetch('/chat/live-session', {
-            method: 'POST',
-            body: fd,
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-            throw new Error(data?.error || 'Live session failed');
-        }
-
-        updateSessionState(data);
-
-        typingDiv.innerText = data.reply;
-        typingDiv.dataset.rawText = data.reply;
-
-        updateLiveStatus(data.user_text ? `Heard: "${data.user_text}"` : 'Listening for your next take...');
-
-        if (data.audio) {
-            playAudio('data:audio/mpeg;base64,' + data.audio);
-        }
-
-        if (Array.isArray(data.panels) && data.panels.length > 0) {
-            appendMangaPanels(data.panels);
-        }
-
-        if (data.trigger_cast) {
-            saveLastSceneScript(data.reply || '');
-            setMode('scene');
-            attachSceneActions(typingDiv, data.characters);
-        }
-
-    } catch (e) {
-        updateLiveStatus(`Error: ${e.message}`);
-        typingDiv.innerText = `Mic error: ${e.message}`;
-    }
-}
-
-// =========================
-// CASTING OFFICE
-// =========================
-
-function openCastingOffice(characters) {
-    if (!castingModal || !charList) return;
-
-    charList.innerHTML = '';
-
-    const chars = (characters && Object.keys(characters).length)
-        ? characters
-        : inferSceneCharactersFromLastReply();
-
-    Object.keys(chars).forEach(name => {
+function renderMangaPanels(entries = [], messageIndex = 0) {
+    if (!Array.isArray(entries) || entries.length === 0) return null;
+    const gallery = document.createElement('div');
+    gallery.className = 'panel-gallery';
+    const title = document.createElement('div');
+    title.className = 'panel-gallery-title';
+    title.innerHTML = `<strong>Panels</strong><span>Tap to view fullscreen</span>`;
+    gallery.appendChild(title);
+    const grid = document.createElement('div');
+    grid.className = 'panel-grid';
+    const urls = entries.map(item => typeof item === 'string' ? item : (item.url || item.image_url));
+    entries.forEach((entry, index) => {
+        const url = typeof entry === 'string' ? entry : (entry.url || entry.image_url);
+        const speaker = typeof entry === 'string' ? 'Scene' : (entry.speaker || 'Scene');
         const card = document.createElement('div');
-        card.className = 'char-card';
-
-        const selectedVoice = chars[name].voice_mapping || guessVoiceForCharacter(name, chars[name]);
-
-        card.innerHTML = `
-            <div>
-                <strong class="char-name">${name}</strong><br>
-                <small class="char-vibe">${chars[name].vibe || 'Character'}</small>
-            </div>
-
-            <select class="voice-select" data-char="${name}">
-                ${PRODUCTION_VOICES.map(voice =>
-                    `<option value="${voice.value}" ${voice.value === selectedVoice ? 'selected' : ''}>${voice.label}</option>`
-                ).join('')}
-            </select>
-        `;
-
-        charList.appendChild(card);
+        card.className = 'panel-card';
+        card.tabIndex = 0;
+        card.setAttribute('role', 'button');
+        card.dataset.lightboxImages = JSON.stringify(urls);
+        card.dataset.lightboxIndex = String(index);
+        const frame = document.createElement('div');
+        frame.className = 'panel-frame';
+        const img = document.createElement('img');
+        img.src = url;
+        frame.appendChild(img);
+        frame.appendChild(createBubbleLayer(normalizeBubbles(typeof entry === 'string' ? [] : entry.bubbles), { messageIndex, panelIndex: index }));
+        const header = document.createElement('div');
+        header.className = 'panel-header';
+        const idx = document.createElement('div');
+        idx.className = 'panel-index';
+        idx.innerText = `Panel ${index + 1}`;
+        const sp = document.createElement('div');
+        sp.className = 'panel-speaker';
+        sp.innerText = speaker;
+        header.appendChild(idx); header.appendChild(sp);
+        card.appendChild(frame); card.appendChild(header);
+        grid.appendChild(card);
     });
-
-    castingModal.style.display = 'flex';
-    messagesDiv.style.opacity = '0.2';
+    gallery.appendChild(grid);
+    return gallery;
 }
-
-function closeCastingOffice() {
-    if (castingModal) castingModal.style.display = 'none';
-    if (messagesDiv) messagesDiv.style.opacity = '1';
-}
-
-async function handleProduction() {
-    const cast = {};
-
-    document.querySelectorAll('.voice-select').forEach(select => {
-        cast[select.dataset.char] = select.value;
-    });
-
-    const scriptText = getLatestSceneScript();
-
-    closeCastingOffice();
-
-    appendMessage('assistant', 'Producing scene...');
-
-    try {
-        const res = await fetch('/chat/produce', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                script: scriptText,
-                cast,
-                session_id: currentSessionId,
-            }),
-        });
-
-        if (!res.ok) {
-            const errorData = await res.json().catch(() => null);
-            const message = errorData?.details || errorData?.error || 'Production failed';
-            throw new Error(message);
-        }
-
-        const blob = await res.blob();
-
-        if (!blob.size) {
-            throw new Error('Production returned empty audio');
-        }
-
-        const audioUrl = URL.createObjectURL(blob);
-        showProducedAudio(audioUrl);
-
-    } catch (e) {
-        appendMessage('assistant', `Production failed: ${e.message}`);
-    }
-}
-
-function inferSceneCharactersFromLastReply() {
-    const scriptText = getLatestSceneScript();
-    const characters = {};
-
-    try {
-        const parsed = JSON.parse(scriptText);
-        if (!Array.isArray(parsed)) return characters;
-
-        parsed.forEach(line => {
-            const speaker = (line?.speaker || '').trim();
-            if (!speaker) return;
-
-            characters[speaker] = characters[speaker] || {
-                vibe: 'Generated for this scene',
-                voice_mapping: guessVoiceForCharacter(speaker),
-            };
-        });
-
-    } catch (e) {
-        console.warn('Unable to infer scene characters from last reply', e);
-    }
-
-    return characters;
-}
-
-function getLatestSceneScript() {
-    if (lastSceneScript && lastSceneScript.trim()) {
-        return lastSceneScript;
-    }
-
-    const assistantMessages = [...document.querySelectorAll('.assistant')];
-    const lastMsg = assistantMessages[assistantMessages.length - 1];
-
-    return lastMsg?.dataset?.rawText || lastMsg?.innerText || '';
-}
-
-function guessVoiceForCharacter(name, details = {}) {
-    const lowered = (name || '').toLowerCase();
-    const vibe = (details?.vibe || '').toLowerCase();
-
-    if (lowered.includes('narrator') || vibe.includes('narrator')) {
-        return 'narrator';
-    }
-
-    if (vibe.includes('female') || ['mikasa', 'historia', 'sasha', 'annie'].includes(lowered)) {
-        return 'lead_female';
-    }
-
-    if (vibe.includes('villain') || ['reiner', 'zeke', 'villain'].includes(lowered)) {
-        return 'villain';
-    }
-
-    return 'lead_male';
-}
-
-// =========================
-// MESSAGE + MANGA UI
-// =========================
 
 function appendMessage(role, text) {
-    const div = document.createElement('div');
-    div.className = `message ${role}`;
-    div.innerText = text;
-    div.dataset.rawText = text;
+    projectState.messages.push({ kind: 'text', role, text });
+    saveProjectState();
+    renderProjectState();
+}
 
-    messagesDiv.appendChild(div);
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    saveChatToLocal();
-
-    return div;
+function appendMangaPageFromData(page = {}) {
+    projectState.messages.push({ kind: 'manga-page', page: clonePageData(page) });
+    saveProjectState();
+    renderProjectState();
 }
 
 function appendMangaPanels(entries = []) {
     if (!Array.isArray(entries) || entries.length === 0) return;
-
-    const gallery = document.createElement('div');
-    gallery.className = 'panel-gallery';
-
-    entries.forEach((entry, index) => {
-        const url = typeof entry === 'string' ? entry : entry?.url;
-        if (!url) return;
-
-        const card = document.createElement('div');
-        card.className = 'panel-card';
-
-        const header = document.createElement('div');
-        header.className = 'panel-header';
-
-        const title = document.createElement('div');
-        title.className = 'panel-tag';
-        title.innerText = `Panel ${index + 1}`;
-
-        const speaker = document.createElement('div');
-        speaker.className = 'panel-speaker';
-        speaker.innerText = entry?.speaker ? String(entry.speaker) : 'Scene';
-
-        header.appendChild(title);
-        header.appendChild(speaker);
-
-        const frame = document.createElement('div');
-        frame.className = 'panel-frame';
-
-        const img = document.createElement('img');
-        img.src = url;
-        img.alt = `Generated manga panel ${index + 1}`;
-        img.loading = 'lazy';
-        img.referrerPolicy = 'no-referrer';
-
-        frame.appendChild(img);
-        card.appendChild(header);
-        card.appendChild(frame);
-        gallery.appendChild(card);
-    });
-
-    if (!gallery.children.length) return;
-
-    messagesDiv.appendChild(gallery);
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    saveChatToLocal();
+    projectState.messages.push({ kind: 'panel-gallery', panels: entries.map(clonePanelData) });
+    saveProjectState();
+    renderProjectState();
 }
 
-function appendMangaPage(source, label = 'Stitched manga page') {
-    if (!source) return;
-
-    const wrapper = document.createElement('div');
-    wrapper.className = 'message assistant manga-page-card';
-
-    const title = document.createElement('div');
-    title.className = 'manga-page-title';
-    title.innerText = label;
-
-    const img = document.createElement('img');
-    img.src = source;
-    img.alt = label;
-    img.loading = 'lazy';
-    img.referrerPolicy = 'no-referrer';
-
-    wrapper.appendChild(title);
-    wrapper.appendChild(img);
-    messagesDiv.appendChild(wrapper);
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    saveChatToLocal();
+function saveProjectState() {
+    localStorage.setItem(PROJECT_STORAGE_KEY, JSON.stringify(projectState));
 }
 
-function updateSessionState(data) {
-    if (data.session_id) {
-        currentSessionId = data.session_id;
-        localStorage.setItem('voicecanvas_session_id', currentSessionId);
-    }
-
-    if (data.mode && MODE_META[data.mode]) {
-        setMode(data.mode);
-    }
-}
-
-function toggleInputButtons(canSend) {
-    if (!sendBtn || !micBtn) return;
-
-    sendBtn.style.display = canSend ? 'flex' : 'none';
-    micBtn.style.display = canSend ? 'none' : 'flex';
-}
-
-// =========================
-// INIT
-// =========================
-
-    window.onload = () => {
-    loadLastSceneScript();
-
-    if (inputField) {
-        inputField.addEventListener('input', () =>
-            toggleInputButtons(inputField.value.trim().length > 0 || Boolean(pendingImageFile))
-        );
-
-        inputField.onkeypress = (event) => {
-            if (event.key === 'Enter') {
-                sendMessage();
-            }
-        };
-    }
-
-    if (sendBtn) sendBtn.onclick = sendMessage;
-
-    if (chatModeBtn) chatModeBtn.onclick = () => setMode('gist');
-    if (workshopModeBtn) workshopModeBtn.onclick = () => setMode('workshop');
-    if (sceneModeBtn) sceneModeBtn.onclick = () => setMode('scene');
-    if (mobileChatModeBtn) mobileChatModeBtn.onclick = () => setMode('gist');
-    if (mobileWorkshopModeBtn) mobileWorkshopModeBtn.onclick = () => setMode('workshop');
-    if (mobileSceneModeBtn) mobileSceneModeBtn.onclick = () => setMode('scene');
-    if (composerChatModeBtn) composerChatModeBtn.onclick = () => setMode('gist');
-    if (composerWorkshopModeBtn) composerWorkshopModeBtn.onclick = () => setMode('workshop');
-    if (composerSceneModeBtn) composerSceneModeBtn.onclick = () => setMode('scene');
-    const productionBtn = document.getElementById('start-production-btn');
-    if (productionBtn) productionBtn.onclick = handleProduction;
-    const closeCastingBtn = document.getElementById('close-casting-btn');
-    if (closeCastingBtn) closeCastingBtn.onclick = closeCastingOffice;
-
-    if (ttsToggle) {
-        ttsToggle.onclick = () => {
-            autoTTSEnabled = !autoTTSEnabled;
-            ttsToggle.innerText = autoTTSEnabled ? '🔊' : '🔇';
-        };
-    }
-
-    const newSessionBtn = document.getElementById('new-session-btn');
-    const resetSession = () => {
-        localStorage.removeItem('voicecanvas_session_id');
-        localStorage.removeItem(CHAT_HISTORY_KEY);
-        localStorage.removeItem(MODE_KEY);
-        localStorage.removeItem(LAST_SCENE_KEY);
-        location.reload();
-    };
-    if (newSessionBtn) {
-        newSessionBtn.onclick = resetSession;
-    }
-    if (mobileResetBtn) {
-        mobileResetBtn.onclick = resetSession;
-    }
-
-    if (messagesDiv) {
-        messagesDiv.addEventListener('click', (event) => {
-            const actionButton = event.target.closest('[data-scene-action]');
-            if (!actionButton) return;
-
-            const action = actionButton.dataset.sceneAction;
-            if (action === 'produce') {
-                openCastingOffice(inferSceneCharactersFromLastReply());
-                return;
-            }
-
-            if (action === 'workshop') {
-                setMode('workshop');
-                inputField?.focus();
-            }
-        });
-    }
-
-    document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') {
-            closeMobileMenu();
-            closeCastingOffice();
+function renderProjectState() {
+    messagesDiv.innerHTML = '';
+    projectState.messages.forEach((entry, index) => {
+        let node = null;
+        if (entry.kind === 'text') {
+            node = document.createElement('div');
+            node.className = `message ${entry.role}`;
+            node.innerText = entry.text;
+        } else if (entry.kind === 'manga-page') {
+            node = renderMangaPage(entry.page, index);
+        } else if (entry.kind === 'panel-gallery') {
+            node = renderMangaPanels(entry.panels, index);
         }
+        if (node) messagesDiv.appendChild(node);
     });
+    hydrateSavedMediaCards();
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
 
-    const restoredChat = loadChatFromLocal();
-    const savedMode = localStorage.getItem(MODE_KEY) || 'gist';
-    setMode(savedMode);
-    toggleInputButtons(false);
-    if (!restoredChat) {
-        appendMessage('assistant', 'VoiceCanvas ready - send a message, attach a photo, or do both together.');
+function hydrateSavedMediaCards() {
+    const pageCards = messagesDiv.querySelectorAll('.manga-page-preview');
+    pageCards.forEach((card) => {
+        const img = card.querySelector('img');
+        if (!img || card.dataset.lightboxImages) return;
+        card.dataset.lightboxImages = JSON.stringify([img.src]);
+        card.dataset.lightboxIndex = '0';
+    });
+    const panelCards = messagesDiv.querySelectorAll('.panel-card');
+    panelCards.forEach((card, index) => {
+        if (card.dataset.lightboxImages) return;
+        const gallery = card.closest('.panel-gallery');
+        const panelImages = gallery ? Array.from(gallery.querySelectorAll('.panel-card img')).map((img) => img.src).filter(Boolean) : [];
+        const imageIndex = panelImages.findIndex((src) => { const currentImage = card.querySelector('img'); return currentImage && currentImage.src === src; });
+        if (!panelImages.length) return;
+        card.dataset.lightboxImages = JSON.stringify(panelImages);
+        card.dataset.lightboxIndex = String(imageIndex >= 0 ? imageIndex : index);
+    });
+}
+
+function getBubbleStateTarget(node) {
+    const messageIndex = Number(node.dataset.messageIndex);
+    const panelIndex = Number(node.dataset.panelIndex);
+    const bubbleIndex = Number(node.dataset.bubbleIndex);
+    const message = projectState.messages[messageIndex];
+    if (!message || Number.isNaN(bubbleIndex)) return null;
+    if (message.kind === 'manga-page') return message.page?.bubbles?.[bubbleIndex] || null;
+    if (message.kind === 'panel-gallery') return message.panels?.[panelIndex]?.bubbles?.[bubbleIndex] || null;
+    return null;
+}
+
+function syncBubbleNodeToState(node) {
+    const target = getBubbleStateTarget(node);
+    if (!target) return;
+    target.text = node.querySelector('.bubble-text')?.innerText?.trim() || '...';
+    target.type = node.dataset.style || 'speech';
+    target.x = clampPercent(node.style.left, 0.02, 0.88);
+    target.y = clampPercent(node.style.top, 0.02, 0.88);
+    target.w = clampPercent(node.style.width, 0.16, 0.72);
+    target.tail = inferTailFromPosition(target.x, target.y, target.type);
+    node.dataset.tail = target.tail;
+}
+
+function clampPercent(value, min, max) {
+    const numeric = Number.parseFloat(value) / 100;
+    if (Number.isNaN(numeric)) return min;
+    return Math.min(max, Math.max(min, numeric));
+}
+
+function runUIDemo() {
+    appendMessage('assistant', 'Demo manga generated successfully.');
+    appendMangaPageFromData({ image_url: PLACEHOLDER_PAGE_IMAGE, label: 'Demo manga page', bubbles: [] });
+    appendMangaPanels([
+        { image_url: PLACEHOLDER_PANEL_IMAGES[0], speaker: 'Opening', bubbles: [] },
+        { image_url: PLACEHOLDER_PANEL_IMAGES[1], speaker: 'Reaction', bubbles: [] },
+        { image_url: PLACEHOLDER_PANEL_IMAGES[2], speaker: 'Conflict', bubbles: [] },
+        { image_url: PLACEHOLDER_PANEL_IMAGES[3], speaker: 'Finale', bubbles: [] }
+    ]);
+}
+
+function setMode(mode) {
+    currentMode = MODE_META[mode] ? mode : 'gist';
+    if (modeIndicator) modeIndicator.innerText = MODE_META[currentMode].label;
+    if (mobileModeIndicator) mobileModeIndicator.innerText = MODE_META[currentMode].label;
+    if (inputField) inputField.placeholder = MODE_META[currentMode].placeholder;
+    
+    const toggleActive = (element, state) => { if (element) element.classList.toggle('active', state); };
+    toggleActive(chatModeBtn, mode === 'gist');
+    toggleActive(workshopModeBtn, mode === 'workshop');
+    toggleActive(sceneModeBtn, mode === 'scene');
+    toggleActive(mobileChatModeBtn, mode === 'gist');
+    toggleActive(mobileWorkshopModeBtn, mode === 'workshop');
+    toggleActive(mobileSceneModeBtn, mode === 'scene');
+    toggleActive(composerChatModeBtn, mode === 'gist');
+    toggleActive(composerWorkshopModeBtn, mode === 'workshop');
+    toggleActive(composerSceneModeBtn, mode === 'scene');
+    localStorage.setItem('voicecanvas_mode', mode);
+}
+
+function loadChat() {
+    const saved = localStorage.getItem(PROJECT_STORAGE_KEY);
+    if (!saved) return false;
+    try {
+        const parsed = JSON.parse(saved);
+        if (!parsed || !Array.isArray(parsed.messages)) return false;
+        projectState = parsed;
+        renderProjectState();
+        return true;
+    } catch (error) {
+        console.error('Project restore error:', error);
+        return false;
     }
+}
+
+function resetSession() {
+    localStorage.removeItem(PROJECT_STORAGE_KEY);
+    projectState = { messages: [] };
+    messagesDiv.innerHTML = '';
+    appendMessage('assistant', 'Session reset successfully.');
+}
+
+// =========================
+// EVENT BINDINGS
+// =========================
+
+sendBtn.onclick = () => {
+    const text = inputField.value.trim();
+    if (!text && !pendingImageFile) return;
+    if (text) appendMessage('user', text);
+    inputField.value = '';
+    setTimeout(() => runUIDemo(), 500);
+    if (pendingImageFile) { pendingImageFile = null; if (attachmentChip) attachmentChip.classList.remove('visible'); }
+};
+
+if (attachBtn && dnaInput) {
+    attachBtn.onclick = () => dnaInput.click();
+    dnaInput.onchange = () => {
+        const file = dnaInput.files[0];
+        if (!file) return;
+        pendingImageFile = file;
+        if (pendingImagePreviewUrl) URL.revokeObjectURL(pendingImagePreviewUrl);
+        pendingImagePreviewUrl = URL.createObjectURL(file);
+        if (attachmentChip) attachmentChip.classList.add('visible');
+        if (attachmentThumb) attachmentThumb.src = pendingImagePreviewUrl;
+        if (attachmentName) attachmentName.innerText = file.name;
+    };
+}
+
+if (attachmentRemove) {
+    attachmentRemove.onclick = () => {
+        pendingImageFile = null;
+        if (dnaInput) dnaInput.value = '';
+        if (attachmentChip) attachmentChip.classList.remove('visible');
+        if (attachmentThumb) attachmentThumb.removeAttribute('src');
+        if (attachmentName) attachmentName.innerText = '';
+        if (pendingImagePreviewUrl) { URL.revokeObjectURL(pendingImagePreviewUrl); pendingImagePreviewUrl = null; }
+    };
+}
+
+chatModeBtn.onclick = () => setMode('gist');
+workshopModeBtn.onclick = () => setMode('workshop');
+sceneModeBtn.onclick = () => setMode('scene');
+mobileChatModeBtn.onclick = () => setMode('gist');
+mobileWorkshopModeBtn.onclick = () => setMode('workshop');
+mobileSceneModeBtn.onclick = () => setMode('scene');
+composerChatModeBtn.onclick = () => setMode('gist');
+composerWorkshopModeBtn.onclick = () => setMode('workshop');
+composerSceneModeBtn.onclick = () => setMode('scene');
+
+if (desktopTestMangaBtn) desktopTestMangaBtn.onclick = runUIDemo;
+if (mobileTestMangaBtn) mobileTestMangaBtn.onclick = runUIDemo;
+if (newSessionBtn) newSessionBtn.onclick = resetSession;
+if (mobileResetBtn) mobileResetBtn.onclick = resetSession;
+
+function openMobileMenu() { document.body.classList.add('mobile-menu-open'); }
+function closeMobileMenu() { document.body.classList.remove('mobile-menu-open'); }
+const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+if (mobileMenuBtn) mobileMenuBtn.onclick = (e) => { e.stopPropagation(); document.body.classList.toggle('mobile-menu-open'); };
+document.addEventListener('click', () => { if (window.innerWidth <= 960) closeMobileMenu(); });
+
+messagesDiv.addEventListener('click', (event) => {
+    if (event.target.closest('.speech-bubble')) return;
+    const target = event.target.closest('[data-lightbox-images], .panel-card, .manga-page-preview, .panel-frame img, .manga-page-preview img');
+    if (!target) return;
+    try {
+        const activator = target.matches('[data-lightbox-images]') ? target : target.closest('.panel-card, .manga-page-preview');
+        if (!activator) return;
+        if (!activator.dataset.lightboxImages) hydrateSavedMediaCards();
+        const images = JSON.parse(activator.dataset.lightboxImages || '[]');
+        const index = Number(activator.dataset.lightboxIndex || '0');
+        if (images.length) openLightbox(images, index);
+    } catch (error) { console.error('Lightbox payload error:', error); }
+});
+
+function openLightbox(images = [], index = 0) {
+    lightboxImages = images.filter(Boolean);
+    if (!lightboxImages.length) return;
+    lightboxIndex = index;
+    if (lightboxImage) lightboxImage.src = lightboxImages[lightboxIndex];
+    if (lightboxCounter) lightboxCounter.innerText = `${lightboxIndex + 1} / ${lightboxImages.length}`;
+    if (lightbox) lightbox.classList.add('active');
+    document.body.classList.add('lightbox-open');
+}
+function closeLightbox() { if (lightbox) lightbox.classList.remove('active'); document.body.classList.remove('lightbox-open'); }
+function showLightboxImage(direction) { lightboxIndex = (lightboxIndex + direction + lightboxImages.length) % lightboxImages.length; if (lightboxImage) lightboxImage.src = lightboxImages[lightboxIndex]; if (lightboxCounter) lightboxCounter.innerText = `${lightboxIndex + 1} / ${lightboxImages.length}`; }
+if (lightboxCloseBtn) lightboxCloseBtn.onclick = closeLightbox;
+if (lightboxPrevBtn) lightboxPrevBtn.onclick = () => showLightboxImage(-1);
+if (lightboxNextBtn) lightboxNextBtn.onclick = () => showLightboxImage(1);
+if (lightbox) lightbox.onclick = (e) => { if (e.target === lightbox) closeLightbox(); };
+if (lightbox) lightbox.addEventListener('touchstart', (e) => { lightboxTouchStartX = e.changedTouches[0].screenX; }, { passive: true });
+if (lightbox) lightbox.addEventListener('touchend', (e) => { const diff = e.changedTouches[0].screenX - lightboxTouchStartX; if (Math.abs(diff) > 50) showLightboxImage(diff > 0 ? -1 : 1); }, { passive: true });
+
+messagesDiv.addEventListener('focusin', (event) => { const bubble = event.target.closest('.speech-bubble'); if (bubble) bubble.classList.add('editing'); });
+messagesDiv.addEventListener('focusout', (event) => { const bubble = event.target.closest('.speech-bubble'); if (bubble) setTimeout(() => { if (!bubble.contains(document.activeElement)) bubble.classList.remove('editing'); }, 0); });
+messagesDiv.addEventListener('input', (event) => { const bubble = event.target.closest('.speech-bubble'); if (bubble) { syncBubbleNodeToState(bubble); saveProjectState(); } });
+messagesDiv.addEventListener('keydown', (event) => { if (!event.target.closest('.bubble-text')) return; if (event.key === 'Enter') { event.preventDefault(); event.target.blur(); const bubble = event.target.closest('.speech-bubble'); if (bubble) { syncBubbleNodeToState(bubble); saveProjectState(); } } });
+
+messagesDiv.addEventListener('pointerdown', (event) => {
+    const bubble = event.target.closest('.speech-bubble');
+    if (!bubble) return;
+    const layer = bubble.closest('.bubble-layer');
+    if (!layer) return;
+    if (event.target.closest('.bubble-text')) return;
+    const layerRect = layer.getBoundingClientRect();
+    const bubbleRect = bubble.getBoundingClientRect();
+    const isResize = Boolean(event.target.closest('[data-action="resize"]'));
+    const isDirectMoveHandle = Boolean(event.target.closest('[data-action="drag"]'));
+    const canDragBubbleBody = bubble.classList.contains('move-ready') && !event.target.closest('[data-action="style"]');
+    if (!isResize && !isDirectMoveHandle && !canDragBubbleBody) return;
+    activeBubbleDrag = { bubble, layerRect, startX: event.clientX, startY: event.clientY, startLeft: (bubbleRect.left - layerRect.left) / layerRect.width, startTop: (bubbleRect.top - layerRect.top) / layerRect.height, startWidth: bubbleRect.width / layerRect.width, mode: isResize ? 'resize' : 'drag' };
+    bubble.classList.add('dragging');
+    bubble.classList.remove('move-ready');
+    event.preventDefault();
+});
+
+document.addEventListener('pointermove', (event) => {
+    if (!activeBubbleDrag) return;
+    const { bubble, layerRect, startX, startY, startLeft, startTop, startWidth, mode } = activeBubbleDrag;
+    if (mode === 'drag') {
+        const left = Math.min(0.88, Math.max(0.02, startLeft + ((event.clientX - startX) / layerRect.width)));
+        const top = Math.min(0.88, Math.max(0.02, startTop + ((event.clientY - startY) / layerRect.height)));
+        bubble.style.left = `${left * 100}%`;
+        bubble.style.top = `${top * 100}%`;
+    } else {
+        const width = Math.min(0.72, Math.max(0.16, startWidth + ((event.clientX - startX) / layerRect.width)));
+        bubble.style.width = `${width * 100}%`;
+    }
+    event.preventDefault();
+});
+
+document.addEventListener('pointerup', () => { if (activeBubbleDrag) { syncBubbleNodeToState(activeBubbleDrag.bubble); activeBubbleDrag.bubble.classList.remove('dragging'); activeBubbleDrag = null; saveProjectState(); } });
+document.addEventListener('pointercancel', () => { if (activeBubbleDrag) { syncBubbleNodeToState(activeBubbleDrag.bubble); activeBubbleDrag.bubble.classList.remove('dragging'); activeBubbleDrag = null; saveProjectState(); } });
+
+messagesDiv.addEventListener('mousedown', (event) => {
+    const styleToggle = event.target.closest('[data-action="style"]');
+    if (!styleToggle) return;
+    const bubble = styleToggle.closest('.speech-bubble');
+    if (!bubble) return;
+    const current = bubble.dataset.style || 'speech';
+    const next = BUBBLE_STYLE_CYCLE[(BUBBLE_STYLE_CYCLE.indexOf(current) + 1) % BUBBLE_STYLE_CYCLE.length];
+    bubble.dataset.style = next;
+    bubble.classList.add('editing');
+    syncBubbleNodeToState(bubble);
+    saveProjectState();
+    event.preventDefault();
+});
+
+messagesDiv.addEventListener('click', (event) => {
+    const moveToggle = event.target.closest('[data-action="drag"]');
+    if (!moveToggle) return;
+    const bubble = moveToggle.closest('.speech-bubble');
+    if (!bubble) return;
+    messagesDiv.querySelectorAll('.speech-bubble.move-ready').forEach((node) => { if (node !== bubble) node.classList.remove('move-ready'); });
+    bubble.classList.toggle('move-ready');
+    bubble.classList.add('editing');
+    event.preventDefault();
+});
+
+inputField.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendBtn.click(); });
+
+window.onload = () => {
+    const savedMode = localStorage.getItem('voicecanvas_mode') || 'gist';
+    setMode(savedMode);
+    const restored = loadChat();
+    if (!restored) appendMessage('assistant', 'VoiceCanvas ready — drop an idea and generate manga pages.');
 };
